@@ -79,8 +79,17 @@ type Endee struct {
 	HTTP    *http.Client
 }
 
+type IndexInfo struct {
+	Name          string `json:"name"`
+	Dimension     int    `json:"dimension"`
+	SpaceType     string `json:"space_type"`
+	TotalElements int    `json:"total_elements"`
+	CreatedAt     int64  `json:"created_at"`
+	// Add other fields as needed
+}
+
 type ListIndexesResponse struct {
-	Indexes []interface{} `json:"indixes"`
+	Indexes []IndexInfo `json:"indexes"` // This tag MUST match the JSON key exactly
 }
 
 type CreateIndexRequest struct {
@@ -379,12 +388,12 @@ func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimens
 	return err
 }
 
-func (nd *Endee) ListIndexes() ([]interface{}, error) {
+func (nd *Endee) ListIndexes() ([]IndexInfo, error) {
 	return nd.ListIndexesWithContext(context.Background())
 }
 
 // ListIndexesWithContext lists indexes with context support for cancellation
-func (nd *Endee) ListIndexesWithContext(ctx context.Context) ([]interface{}, error) {
+func (nd *Endee) ListIndexesWithContext(ctx context.Context) ([]IndexInfo, error) {
 	req, err := http.NewRequest("GET", nd.buildURL("/index/list"), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -413,7 +422,7 @@ func (nd *Endee) ListIndexesWithContext(ctx context.Context) ([]interface{}, err
 
 	// Ensure we never return nil slice, return empty slice instead
 	if response.Indexes == nil {
-		return []interface{}{}, nil
+		return []IndexInfo{}, nil
 	}
 
 	return response.Indexes, nil
