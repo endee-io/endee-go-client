@@ -113,6 +113,4 @@ func checkError(resp *http.Response) error {
 	default:
 		return &APIError{StatusCode: resp.StatusCode, Message: msg}
 	}
-
-	return nil
 }
