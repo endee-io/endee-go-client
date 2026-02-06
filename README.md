@@ -52,7 +52,7 @@ func main() {
         "cosine",         // space_type (cosine, l2, ip)
         16,               // M - HNSW connectivity parameter
         128,              // ef_con - construction parameter
-        false,            // useFp16 - use 16-bit precision
+        endee.PrecisionFloat32, // precision (float32, float16, int16d, int8d, binary)
         nil,              // version (optional)
         0,                // sparse_dim (optional, 0 for dense-only)
     )
@@ -176,7 +176,7 @@ err := client.CreateIndex(
     "cosine",           // space_type
     16,                 // M (graph connectivity, default = 16)
     128,                // ef_con (construction parameter, default = 128)
-    false,              // useFp16 (use 16-bit precision)
+    endee.PrecisionFloat32, // precision
     nil,                // version (optional)
     0,                  // sparse_dim (optional, 0 for dense-only)
 )
@@ -192,18 +192,21 @@ if err != nil {
 - `spaceType`: Distance metric - `"cosine"`, `"l2"`, or `"ip"` (inner product)
 - `M`: HNSW graph connectivity parameter - higher values increase recall but use more memory (default: 16)
 - `efCon`: HNSW construction parameter - higher values improve index quality but slow down indexing (default: 128)
-- `useFp16`: Use 16-bit floating point precision for memory savings
+- `precision`: Support for multiple precision levels - `PrecisionFloat32`, `PrecisionFloat16`, `PrecisionInt16D`, `PrecisionInt8D`, `PrecisionBinary`
 - `version`: Optional version parameter for index versioning
 - `sparseDim`: Dimension for sparse vectors (0 for dense-only)
 
 **Precision Levels:**
 
-The Go client currently supports precision through the `useFp16` boolean parameter:
+The Go client supports various precision levels for memory/accuracy tradeoffs:
 
-| Precision | Data Type | Memory Usage | Accuracy | Use Case |
-|-----------|-----------|--------------|----------|----------|
-| FP32 (default) | 32-bit float | Highest | Maximum | When accuracy is critical |
-| FP16 | 16-bit float | ~50% less | Very good | Good accuracy with half precision |
+| Precision | Constant | Data Type | Memory Usage | Use Case |
+|-----------|----------|-----------|--------------|----------|
+| FP32 (default) | `PrecisionFloat32` | 32-bit float | Highest | Maximum accuracy |
+| FP16 | `PrecisionFloat16` | 16-bit float | ~50% less | Good accuracy, lower memory |
+| INT16 | `PrecisionInt16D` | 16-bit int | Optimized | Quantized accuracy |
+| INT8 | `PrecisionInt8D` | 8-bit int | ~75% less | Maximum memory savings |
+| Binary | `PrecisionBinary` | 1-bit | Minimum | Fast, low-memory keyword-like search |
 
 **Example with different precision levels:**
 
@@ -211,10 +214,10 @@ The Go client currently supports precision through the `useFp16` boolean paramet
 client := endee.EndeeClient("your-token-here")
 
 // High accuracy index (FP32)
-err := client.CreateIndex("high_accuracy_index", 768, "cosine", 16, 128, false, nil, 0)
+err := client.CreateIndex("high_accuracy_index", 768, "cosine", 16, 128, endee.PrecisionFloat32, nil, 0)
 
-// Memory-optimized index (FP16)
-err = client.CreateIndex("balanced_index", 768, "cosine", 16, 128, true, nil, 0)
+// Memory-optimized index (INT8)
+err = client.CreateIndex("low_memory_index", 768, "cosine", 16, 128, endee.PrecisionInt8D, nil, 0)
 ```
 
 ### Get an Index
@@ -516,7 +519,7 @@ ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 defer cancel()
 
 // Use context with operations
-err := client.CreateIndexWithContext(ctx, "my_index", 768, "cosine", 16, 128, false, nil, 0)
+err := client.CreateIndexWithContext(ctx, "my_index", 768, "cosine", 16, 128, endee.PrecisionFloat32, nil, 0)
 
 indexes, err := client.ListIndexesWithContext(ctx)
 
@@ -538,8 +541,8 @@ err = client.DeleteIndexWithContext(ctx, "my_index")
 | Method | Description |
 |--------|-------------|
 | `EndeeClient(token string) *Endee` | Initialize client with optional API token |
-| `CreateIndex(name, dimension, spaceType, M, efCon, useFp16, version, sparseDim) error` | Create a new vector index |
-| `CreateIndexWithContext(ctx, name, dimension, spaceType, M, efCon, useFp16, version, sparseDim) error` | Create index with context support |
+| `CreateIndex(name, dimension, spaceType, M, efCon, precision, version, sparseDim) error` | Create a new vector index |
+| `CreateIndexWithContext(ctx, name, dimension, spaceType, M, efCon, precision, version, sparseDim) error` | Create index with context support |
 | `ListIndexes() ([]interface{}, error)` | List all indexes in workspace |
 | `ListIndexesWithContext(ctx) ([]interface{}, error)` | List indexes with context support |
 | `DeleteIndex(name string) error` | Delete a vector index |
@@ -555,8 +558,14 @@ err = client.DeleteIndexWithContext(ctx, "my_index")
 | `UpsertWithContext(ctx, vectors) error` | Upsert with context support |
 | `Query(vector, sparseIndices, sparseValues, k, filter, ef, includeVectors) ([]QueryResult, error)` | Search for similar vectors |
 | `QueryWithContext(ctx, vector, sparseIndices, sparseValues, k, filter, ef, includeVectors) ([]QueryResult, error)` | Query with context support |
-| `DeleteVector(id string) (string, error)` | Delete a vector by ID |
-| `DeleteVectorWithContext(ctx, id) (string, error)` | Delete vector with context support |
+| `DeleteVectorById(id string) (string, error)` | Delete a vector by ID |
+| `DeleteVectorByIdWithContext(ctx, id) (string, error)` | Delete vector with context support |
+| `DeleteVectorByFilter(filter map[string]interface{}) (string, error)` | Delete vectors matching a specific filter |
+| `DeleteVectorByFilterWithContext(ctx, filter) (string, error)` | Delete vectors matching a specific filter with context support |
+| `DeleteHybridVectorById(id string) (string, error)` | Delete a hybrid vector by ID |
+| `DeleteHybridVectorByIdWithContext(ctx, id) (string, error)` | Delete hybrid vector with context support |
+| `DeleteHybridVectorByFilter(filter map[string]interface{}) (string, error)` | Delete hybrid vectors matching a specific filter |
+| `DeleteHybridVectorByFilterWithContext(ctx, filter) (string, error)` | Delete hybrid vectors matching a specific filter with context support |
 | `GetVector(id string) (VectorItem, error)` | Get a specific vector by ID |
 | `GetVectorWithContext(ctx, id) (VectorItem, error)` | Get vector with context support |
 | `GetInfo() string` | Get index statistics and configuration |
@@ -639,7 +648,7 @@ The Go client includes several performance optimizations:
 
 ```go
 // Handle common errors
-err := client.CreateIndex("test", 768, "cosine", 16, 128, false, nil, 0)
+err := client.CreateIndex("test", 768, "cosine", 16, 128, endee.PrecisionFloat32, nil, 0)
 if err != nil {
     switch {
     case strings.Contains(err.Error(), "already exists"):
