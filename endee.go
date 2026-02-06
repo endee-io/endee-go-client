@@ -31,27 +31,6 @@ var (
 		},
 	}
 
-	// Slice pools for vector data
-	float32SlicePool = sync.Pool{
-		New: func() interface{} {
-			return make([]float32, 0, 1024) // Pre-allocate for typical vector sizes
-		},
-	}
-
-	// Interface slice pool for msgpack operations
-	interfaceSlicePool = sync.Pool{
-		New: func() interface{} {
-			return make([]interface{}, 0, 100)
-		},
-	}
-
-	// String slice pool for batch operations
-	stringSlicePool = sync.Pool{
-		New: func() interface{} {
-			return make([]string, 0, 100)
-		},
-	}
-
 	// Map pool for metadata and filters
 	mapPool = sync.Pool{
 		New: func() interface{} {
@@ -125,42 +104,6 @@ func getBuffer() *bytes.Buffer {
 func putBuffer(buf *bytes.Buffer) {
 	buf.Reset()
 	bufferPool.Put(buf)
-}
-
-// getFloat32Slice gets a float32 slice from the pool
-func getFloat32Slice() []float32 {
-	return float32SlicePool.Get().([]float32)[:0]
-}
-
-// putFloat32Slice returns a float32 slice to the pool
-func putFloat32Slice(slice []float32) {
-	if cap(slice) > 0 {
-		float32SlicePool.Put(slice[:0])
-	}
-}
-
-// getInterfaceSlice gets an interface slice from the pool
-func getInterfaceSlice() []interface{} {
-	return interfaceSlicePool.Get().([]interface{})[:0]
-}
-
-// putInterfaceSlice returns an interface slice to the pool
-func putInterfaceSlice(slice []interface{}) {
-	if cap(slice) > 0 {
-		interfaceSlicePool.Put(slice[:0])
-	}
-}
-
-// getStringSlice gets a string slice from the pool
-func getStringSlice() []string {
-	return stringSlicePool.Get().([]string)[:0]
-}
-
-// putStringSlice returns a string slice to the pool
-func putStringSlice(slice []string) {
-	if cap(slice) > 0 {
-		stringSlicePool.Put(slice[:0])
-	}
 }
 
 // getMap gets a map from the pool
@@ -348,14 +291,41 @@ func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimens
 	}
 
 	// Validate dimension
-	if dimension > MaxDimensionAllowed {
-		return fmt.Errorf("dimension cannot be greater than %d", MaxDimensionAllowed)
+	if dimension <= 0 || dimension > MaxDimensionAllowed {
+		return fmt.Errorf("dimension must be between 1 and %d", MaxDimensionAllowed)
+	}
+
+	// Validate M
+	if M <= 0 {
+		return fmt.Errorf("M must be greater than 0")
+	}
+
+	// Validate ef_con
+	if efCon <= 0 {
+		return fmt.Errorf("ef_con must be greater than 0")
 	}
 
 	// Validate and normalize space type
 	spaceType = strings.ToLower(spaceType)
 	if !validSpaceTypes[spaceType] {
 		return fmt.Errorf("invalid space type: %s", spaceType)
+	}
+
+	// Validate precision
+	validPrecision := false
+	for _, p := range PrecisionTypesSupported {
+		if p == precision {
+			validPrecision = true
+			break
+		}
+	}
+	if !validPrecision {
+		return fmt.Errorf("invalid precision: %s. Must be one of: %v", precision, PrecisionTypesSupported)
+	}
+
+	// Validate sparse_dim
+	if sparseDim < 0 {
+		return fmt.Errorf("sparse_dim must be non-negative")
 	}
 
 	// Handle version

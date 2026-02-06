@@ -217,6 +217,25 @@ func (idx *Index) UpsertWithContext(ctx context.Context, inputArray []VectorItem
 		return nil
 	}
 
+	// Validate each vector item
+	for i, item := range inputArray {
+		if strings.TrimSpace(item.ID) == "" {
+			return fmt.Errorf("id must not be empty (item index %d)", i)
+		}
+
+		// Sparse data validation: both must be present or both nil/empty
+		hasIndices := len(item.SparseIndices) > 0
+		hasValues := len(item.SparseValues) > 0
+
+		if hasIndices != hasValues {
+			return fmt.Errorf("sparse_indices and sparse_values must both be provided together (item id: %s)", item.ID)
+		}
+
+		if hasIndices && len(item.SparseIndices) != len(item.SparseValues) {
+			return fmt.Errorf("sparse_indices and sparse_values must have the same length (item id: %s)", item.ID)
+		}
+	}
+
 	// For small batches, use sequential processing
 	if len(inputArray) <= 10 {
 		return idx.upsertSequential(ctx, inputArray)
@@ -377,11 +396,29 @@ func (i *Index) Query(vector []float32, sparseIndices []int, sparseValues []floa
 // QueryWithContext performs vector similarity search with context support
 func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIndices []int, sparseValues []float32, k int, filter map[string]interface{}, ef int, includeVectors bool) ([]QueryResult, error) {
 	// Validate parameters
-	if k > MaxTopKAllowed {
-		return nil, fmt.Errorf("top_k cannot be greater than %d", MaxTopKAllowed)
+	if k <= 0 || k > MaxTopKAllowed {
+		return nil, fmt.Errorf("top_k must be between 1 and %d", MaxTopKAllowed)
 	}
-	if ef > MaxEfSearchAllowed {
-		return nil, fmt.Errorf("ef cannot be greater than %d", MaxEfSearchAllowed)
+	if ef < 0 || ef > MaxEfSearchAllowed {
+		return nil, fmt.Errorf("ef must be between 0 and %d", MaxEfSearchAllowed)
+	}
+
+	// Validate that at least one of dense or sparse is provided
+	hasDense := len(vector) > 0
+	hasSparseIndices := len(sparseIndices) > 0
+	hasSparseValues := len(sparseValues) > 0
+
+	if !hasDense && !hasSparseIndices {
+		return nil, fmt.Errorf("at least one of vector (dense) or sparse_indices/sparse_values must be provided")
+	}
+
+	// Validate sparse data consistency
+	if hasSparseIndices != hasSparseValues {
+		return nil, fmt.Errorf("sparse_indices and sparse_values must both be provided together")
+	}
+
+	if hasSparseIndices && len(sparseIndices) != len(sparseValues) {
+		return nil, fmt.Errorf("sparse_indices and sparse_values must have the same length")
 	}
 
 	// Normalize query vector
@@ -473,28 +510,12 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 		var vectorData []float32
 		if len(result) > 5 && result[5] != nil {
 			vectorInterface := result[5].([]interface{})
-			// Use pooled slice for better performance
-			vectorData = getFloat32Slice()
-			if cap(vectorData) < len(vectorInterface) {
-				vectorData = make([]float32, len(vectorInterface))
-			} else {
-				vectorData = vectorData[:len(vectorInterface)]
-			}
+			// Direct allocation instead of pooling
+			vectorData = make([]float32, len(vectorInterface))
 
-			// Convert with type safety
+			// Convert with type safety using helper
 			for j, v := range vectorInterface {
-				if f32, ok := v.(float32); ok {
-					vectorData[j] = f32
-				} else if f64, ok := v.(float64); ok {
-					vectorData[j] = float32(f64)
-				} else {
-					// Handle potential integer values
-					if i64, ok := v.(int64); ok {
-						vectorData[j] = float32(i64)
-					} else if i32, ok := v.(int32); ok {
-						vectorData[j] = float32(i32)
-					}
-				}
+				vectorData[j] = toFloat32(v)
 			}
 		}
 
@@ -658,12 +679,8 @@ func (i *Index) processResult(result []interface{}, includeVectors bool) (QueryR
 	// Handle vectors
 	if includeVectors && len(result) > 5 && result[5] != nil {
 		vectorInterface := result[5].([]interface{})
-		vectorData := getFloat32Slice()
-		if cap(vectorData) < len(vectorInterface) {
-			vectorData = make([]float32, len(vectorInterface))
-		} else {
-			vectorData = vectorData[:len(vectorInterface)]
-		}
+		// Direct allocation instead of pooling
+		vectorData := make([]float32, len(vectorInterface))
 
 		// Convert with type safety
 		for j, v := range vectorInterface {
