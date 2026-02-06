@@ -542,32 +542,19 @@ err = client.DeleteIndexWithContext(ctx, "my_index")
 |--------|-------------|
 | `EndeeClient(token string) *Endee` | Initialize client with optional API token |
 | `CreateIndex(name, dimension, spaceType, M, efCon, precision, version, sparseDim) error` | Create a new vector index |
-| `CreateIndexWithContext(ctx, name, dimension, spaceType, M, efCon, precision, version, sparseDim) error` | Create index with context support |
-| `ListIndexes() ([]interface{}, error)` | List all indexes in workspace |
-| `ListIndexesWithContext(ctx) ([]interface{}, error)` | List indexes with context support |
+| `ListIndexes() ([]IndexInfo, error)` | List all indexes in workspace |
 | `DeleteIndex(name string) error` | Delete a vector index |
-| `DeleteIndexWithContext(ctx, name) error` | Delete index with context support |
 | `GetIndex(name string) (*Index, error)` | Get reference to a vector index |
-| `GetIndexWithContext(ctx, name) (*Index, error)` | Get index with context support |
 
 ### Index Operations
 
 | Method | Description |
 |--------|-------------|
 | `Upsert(vectors []VectorItem) error` | Insert or update vectors (max 1000 per batch) |
-| `UpsertWithContext(ctx, vectors) error` | Upsert with context support |
 | `Query(vector, sparseIndices, sparseValues, k, filter, ef, includeVectors) ([]QueryResult, error)` | Search for similar vectors |
-| `QueryWithContext(ctx, vector, sparseIndices, sparseValues, k, filter, ef, includeVectors) ([]QueryResult, error)` | Query with context support |
 | `DeleteVectorById(id string) (string, error)` | Delete a vector by ID |
-| `DeleteVectorByIdWithContext(ctx, id) (string, error)` | Delete vector with context support |
 | `DeleteVectorByFilter(filter map[string]interface{}) (string, error)` | Delete vectors matching a specific filter |
-| `DeleteVectorByFilterWithContext(ctx, filter) (string, error)` | Delete vectors matching a specific filter with context support |
-| `DeleteHybridVectorById(id string) (string, error)` | Delete a hybrid vector by ID |
-| `DeleteHybridVectorByIdWithContext(ctx, id) (string, error)` | Delete hybrid vector with context support |
-| `DeleteHybridVectorByFilter(filter map[string]interface{}) (string, error)` | Delete hybrid vectors matching a specific filter |
-| `DeleteHybridVectorByFilterWithContext(ctx, filter) (string, error)` | Delete hybrid vectors matching a specific filter with context support |
 | `GetVector(id string) (VectorItem, error)` | Get a specific vector by ID |
-| `GetVectorWithContext(ctx, id) (VectorItem, error)` | Get vector with context support |
 | `GetInfo() string` | Get index statistics and configuration |
 | `String() string` | Get string representation of index |
 
