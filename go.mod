@@ -1,4 +1,4 @@
-module github.com/EndeeLabs/endee-go-client
+module github.com/endee-io/endee-go-client
 
 go 1.21
 
