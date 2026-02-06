@@ -17,7 +17,7 @@ Endee is a high-performance vector database designed for speed and efficiency. T
 ## Installation
 
 ```bash
-go get github.com/EndeeLabs/endee-go-client
+go get github.com/endee-io/endee-go-client
 ```
 
 ## Quick Start
@@ -29,7 +29,7 @@ import (
     "fmt"
     "log"
     
-    "github.com/EndeeLabs/endee-go-client"
+    "github.com/endee-io/endee-go-client"
 )
 
 func main() {
