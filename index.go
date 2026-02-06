@@ -74,10 +74,10 @@ type QueryResult struct {
 
 // QueryRequest represents the search request payload
 type QueryRequest struct {
-	Vector         []float32 `json:"vector"`
+	Vector         []float32 `json:"vector,omitempty"`
 	SparseIndices  []int     `json:"sparse_indices,omitempty"`
 	SparseValues   []float32 `json:"sparse_values,omitempty"`
-	K              int       `json:"k"`
+	TopK           int       `json:"k"`
 	Ef             int       `json:"ef"`
 	IncludeVectors bool      `json:"include_vectors"`
 	Filter         string    `json:"filter,omitempty"`
@@ -378,7 +378,7 @@ func (i *Index) Query(vector []float32, sparseIndices []int, sparseValues []floa
 func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIndices []int, sparseValues []float32, k int, filter map[string]interface{}, ef int, includeVectors bool) ([]QueryResult, error) {
 	// Validate parameters
 	if k > MaxTopKAllowed {
-		return nil, fmt.Errorf("k cannot be greater than %d", MaxTopKAllowed)
+		return nil, fmt.Errorf("top_k cannot be greater than %d", MaxTopKAllowed)
 	}
 	if ef > MaxEfSearchAllowed {
 		return nil, fmt.Errorf("ef cannot be greater than %d", MaxEfSearchAllowed)
@@ -396,14 +396,14 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 		Vector:         normalizedVector,
 		SparseIndices:  sparseIndices,
 		SparseValues:   sparseValues,
-		K:              k,
+		TopK:           k,
 		Ef:             ef,
 		IncludeVectors: includeVectors,
 	}
 
 	// Add filter if provided
 	if filter != nil {
-		filterBytes, err := json.Marshal(filter)
+		filterBytes, err := json.Marshal([]map[string]interface{}{filter})
 		if err != nil {
 			return nil, fmt.Errorf("failed to serialize filter: %v", err)
 		}
@@ -455,7 +455,7 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 			continue // Skip malformed results
 		}
 
-		similarity := result[0].(float32)
+		similarity := toFloat32(result[0])
 		vectorID := safeStringConvert(result[1])
 		// metaData might be string or []byte/[]uint8
 		var metaDataBytes []byte
@@ -468,7 +468,7 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 			}
 		}
 		filterStr := safeStringConvert(result[3])
-		normValue := result[4].(float32)
+		normValue := toFloat32(result[4])
 
 		var vectorData []float32
 		if len(result) > 5 && result[5] != nil {
@@ -616,7 +616,7 @@ func (i *Index) processResult(result []interface{}, includeVectors bool) (QueryR
 		return QueryResult{}, fmt.Errorf("invalid result format: expected at least 5 elements, got %d", len(result))
 	}
 
-	similarity := result[0].(float32)
+	similarity := toFloat32(result[0])
 	vectorID := safeStringConvert(result[1])
 	// metaData parsing
 	var metaDataBytes []byte
@@ -629,7 +629,7 @@ func (i *Index) processResult(result []interface{}, includeVectors bool) (QueryR
 		}
 	}
 	filterStr := safeStringConvert(result[3])
-	normValue := result[4].(float32)
+	normValue := toFloat32(result[4])
 
 	processed := QueryResult{
 		ID:         vectorID,
@@ -667,11 +667,7 @@ func (i *Index) processResult(result []interface{}, includeVectors bool) (QueryR
 
 		// Convert with type safety
 		for j, v := range vectorInterface {
-			if f32, ok := v.(float32); ok {
-				vectorData[j] = f32
-			} else if f64, ok := v.(float64); ok {
-				vectorData[j] = float32(f64)
-			}
+			vectorData[j] = toFloat32(v)
 		}
 
 		if includeVectors {
@@ -682,13 +678,13 @@ func (i *Index) processResult(result []interface{}, includeVectors bool) (QueryR
 	return processed, nil
 }
 
-// DeleteVector deletes a vector by ID from the index
-func (i *Index) DeleteVector(id string) (string, error) {
-	return i.DeleteVectorWithContext(context.Background(), id)
+// DeleteVectorById deletes a vector by ID from the index
+func (i *Index) DeleteVectorById(id string) (string, error) {
+	return i.DeleteVectorByIdWithContext(context.Background(), id)
 }
 
-// DeleteVectorWithContext deletes a vector by ID with context support
-func (i *Index) DeleteVectorWithContext(ctx context.Context, id string) (string, error) {
+// DeleteVectorByIdWithContext deletes a vector by ID with context support
+func (i *Index) DeleteVectorByIdWithContext(ctx context.Context, id string) (string, error) {
 	// Execute request using helper method with context
 	resp, err := i.executeRequestWithContext(ctx, "DELETE", fmt.Sprintf("index/%s/vector/%s/delete", i.Name, id), nil, "")
 	if err != nil {
@@ -707,6 +703,67 @@ func (i *Index) DeleteVectorWithContext(ctx context.Context, id string) (string,
 	}
 
 	return buf.String(), nil
+}
+
+// DeleteVectorByFilter deletes vectors matching a specific filter from the index
+func (i *Index) DeleteVectorByFilter(filter map[string]interface{}) (string, error) {
+	return i.DeleteVectorByFilterWithContext(context.Background(), filter)
+}
+
+// DeleteVectorByFilterWithContext deletes vectors matching a filter with context support
+func (i *Index) DeleteVectorByFilterWithContext(ctx context.Context, filter map[string]interface{}) (string, error) {
+	if filter == nil {
+		return "", fmt.Errorf("filter cannot be nil")
+	}
+
+	// Prepare request body
+	// The API expects the filter as a raw JSON array of objects
+	requestData := map[string]interface{}{
+		"filter": []map[string]interface{}{filter},
+	}
+	jsonData, err := json.Marshal(requestData)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request data: %w", err)
+	}
+
+	// Execute request using helper method with context
+	resp, err := i.executeRequestWithContext(ctx, "DELETE", fmt.Sprintf("index/%s/vectors/delete", i.Name), jsonData, "application/json")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	buf := getBuffer()
+	defer putBuffer(buf)
+	buf.ReadFrom(resp.Body)
+
+	// Check response status
+	if err := checkError(resp); err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
+}
+
+// DeleteHybridVectorById deletes a hybrid vector by ID from the index
+func (i *Index) DeleteHybridVectorById(id string) (string, error) {
+	return i.DeleteVectorById(id)
+}
+
+// DeleteHybridVectorByIdWithContext deletes a hybrid vector by ID with context support
+func (i *Index) DeleteHybridVectorByIdWithContext(ctx context.Context, id string) (string, error) {
+	return i.DeleteVectorByIdWithContext(ctx, id)
+}
+
+// DeleteHybridVectorByFilter deletes hybrid vectors matching a specific filter from the index
+func (i *Index) DeleteHybridVectorByFilter(filter map[string]interface{}) (string, error) {
+	return i.DeleteVectorByFilter(filter)
+}
+
+// DeleteHybridVectorByFilterWithContext deletes hybrid vectors matching a filter with context support
+func (i *Index) DeleteHybridVectorByFilterWithContext(ctx context.Context, filter map[string]interface{}) (string, error) {
+	return i.DeleteVectorByFilterWithContext(ctx, filter)
 }
 
 func (i *Index) GetVector(id string) (VectorItem, error) {
@@ -729,7 +786,6 @@ func (i *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem
 	}
 	defer resp.Body.Close()
 
-	// Check response status and read body
 	// Check response status and read body
 	if err := checkError(resp); err != nil {
 		return VectorItem{}, err
@@ -766,7 +822,7 @@ func (i *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem
 	}
 
 	filterData := safeStringConvert(vectorObj[2])
-	normValue := vectorObj[3].(float32)
+	normValue := toFloat32(vectorObj[3])
 	vectorInterface := vectorObj[4].([]interface{})
 
 	// Handle sparse data if present (elements 5 and 6)
@@ -790,11 +846,7 @@ func (i *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem
 		if valuesInterface, ok := vectorObj[6].([]interface{}); ok {
 			sparseValues = make([]float32, len(valuesInterface))
 			for j, v := range valuesInterface {
-				if f32, ok := v.(float32); ok {
-					sparseValues[j] = f32
-				} else if f64, ok := v.(float64); ok {
-					sparseValues[j] = float32(f64)
-				}
+				sparseValues[j] = toFloat32(v)
 			}
 		}
 	}
@@ -802,13 +854,7 @@ func (i *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem
 	// Convert vector data with type safety
 	vector := make([]float32, len(vectorInterface))
 	for j, v := range vectorInterface {
-		if f32, ok := v.(float32); ok {
-			vector[j] = f32
-		} else if f64, ok := v.(float64); ok {
-			vector[j] = float32(f64)
-		} else {
-			return VectorItem{}, fmt.Errorf("invalid vector element type at index %d", j)
-		}
+		vector[j] = toFloat32(v)
 	}
 
 	// Parse metadata using JsonUnzip
@@ -862,5 +908,38 @@ func safeStringConvert(val interface{}) string {
 		return string(v)
 	default:
 		return fmt.Sprintf("%v", v)
+	}
+}
+
+// toFloat32 safely converts an interface{} to float32
+func toFloat32(val interface{}) float32 {
+	if val == nil {
+		return 0.0
+	}
+	switch v := val.(type) {
+	case float32:
+		return v
+	case float64:
+		return float32(v)
+	case int:
+		return float32(v)
+	case int8:
+		return float32(v)
+	case int16:
+		return float32(v)
+	case int32:
+		return float32(v)
+	case int64:
+		return float32(v)
+	case uint8:
+		return float32(v)
+	case uint16:
+		return float32(v)
+	case uint32:
+		return float32(v)
+	case uint64:
+		return float32(v)
+	default:
+		return 0.0
 	}
 }

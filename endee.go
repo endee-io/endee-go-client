@@ -85,7 +85,9 @@ type IndexInfo struct {
 	SpaceType     string `json:"space_type"`
 	TotalElements int    `json:"total_elements"`
 	CreatedAt     int64  `json:"created_at"`
-	// Add other fields as needed
+	Precision     string `json:"precision,omitempty"`
+	M             int    `json:"M,omitempty"`
+	SparseDim     int    `json:"sparse_dim,omitempty"`
 }
 
 type ListIndexesResponse struct {
@@ -93,15 +95,15 @@ type ListIndexesResponse struct {
 }
 
 type CreateIndexRequest struct {
-	IndexName string `json:"index_name"`
-	Dim       int    `json:"dim"`
+	Name      string `json:"index_name"`
+	Dimension int    `json:"dim"`
 	SpaceType string `json:"space_type"`
 	M         int    `json:"M"`
 	EfCon     int    `json:"ef_con"`
-	SparseDim int    `json:"sparse_dim,omitempty"`
 	Checksum  int    `json:"checksum"`
-	UseInt8d  bool   `json:"use_int8d"`
-	Version   *int   `json:"version,omitempty"`
+	Precision string `json:"precision"`
+	Version   int    `json:"version"`
+	SparseDim int    `json:"sparse_dim"`
 }
 
 // isValidIndexName validates that the index name is alphanumeric with underscores and less than 48 characters
@@ -329,15 +331,20 @@ func readResponseBody(resp *http.Response) ([]byte, error) {
 	return result, nil
 }
 
-func (nd *Endee) CreateIndex(name string, dimension int, spaceType string, M int, efCon int, useFp16 bool, version *int, sparseDim int) error {
-	return nd.CreateIndexWithContext(context.Background(), name, dimension, spaceType, M, efCon, useFp16, version, sparseDim)
+func (nd *Endee) CreateIndex(name string, dimension int, spaceType string, M int, efCon int, precision string, version *int, sparseDim int) error {
+	return nd.CreateIndexWithContext(context.Background(), name, dimension, spaceType, M, efCon, precision, version, sparseDim)
 }
 
 // CreateIndexWithContext creates an index with context support for cancellation
-func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimension int, spaceType string, M int, efCon int, useFp16 bool, version *int, sparseDim int) error {
+func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimension int, spaceType string, M int, efCon int, precision string, version *int, sparseDim int) error {
 	// Validate index name
 	if !isValidIndexName(name) {
 		return errors.New("invalid index name. Index name must be alphanumeric and can contain underscores and less than 48 characters")
+	}
+
+	// Set default precision if not provided
+	if precision == "" {
+		precision = PrecisionInt8D
 	}
 
 	// Validate dimension
@@ -351,16 +358,22 @@ func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimens
 		return fmt.Errorf("invalid space type: %s", spaceType)
 	}
 
+	// Handle version
+	finalVersion := 1
+	if version != nil {
+		finalVersion = *version
+	}
+
 	// Create request payload
 	requestData := CreateIndexRequest{
-		IndexName: name,
-		Dim:       dimension,
+		Name:      name,
+		Dimension: dimension,
 		SpaceType: spaceType,
 		M:         M,
 		EfCon:     efCon,
 		Checksum:  Checksum,
-		UseInt8d:  !useFp16,
-		Version:   version,
+		Precision: precision,
+		Version:   finalVersion,
 		SparseDim: sparseDim,
 	}
 
@@ -454,11 +467,11 @@ type GetIndexResponse struct {
 	TotalElements int    `json:"total_elements"`
 	SpaceType     string `json:"space_type"`
 	Dimension     int    `json:"dimension"`
-	UseFp16       bool   `json:"use_fp16"`
+	Precision     string `json:"precision"`
 	M             int    `json:"M"`
-	Checksum      int    `json:"checksum"`
 	CreatedAt     int64  `json:"created_at"`
 	Name          string `json:"name"`
+	SparseDim     int    `json:"sparse_dim"`
 }
 
 func (nd *Endee) GetIndex(name string) (*Index, error) {
@@ -494,11 +507,9 @@ func (nd *Endee) GetIndexWithContext(ctx context.Context, name string) (*Index, 
 		TotalElements: data.TotalElements,
 		SpaceType:     data.SpaceType,
 		Dimension:     data.Dimension,
-		Precision:     PrecisionInt8D, // Default fallback
+		SparseDim:     data.SparseDim,
+		Precision:     data.Precision,
 		M:             data.M,
-	}
-	if data.UseFp16 {
-		params.Precision = PrecisionFloat16
 	}
 
 	// Create and return Index object
