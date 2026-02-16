@@ -191,8 +191,7 @@ func (idx *Index) normalizeVector(vector []float32) ([]float32, float32, error) 
 		return vector, 1.0, nil
 	}
 
-	normalizedVector := vector // Use same slice initially
-	normalizedVector = make([]float32, len(vector))
+	normalizedVector := make([]float32, len(vector))
 	copy(normalizedVector, vector)
 
 	for i := range normalizedVector {
@@ -298,7 +297,7 @@ func (idx *Index) upsertSequential(ctx context.Context, inputArray []VectorItem)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check response status
 	if err := checkError(resp); err != nil {
@@ -458,7 +457,7 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check response status and read body
 	if err := checkError(resp); err != nil {
@@ -468,7 +467,9 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 	// Read response body
 	buf := getBuffer()
 	defer putBuffer(buf)
-	buf.ReadFrom(resp.Body)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
 
 	// Parse msgpack response
 	var results [][]interface{}
@@ -707,12 +708,14 @@ func (i *Index) DeleteVectorByIdWithContext(ctx context.Context, id string) (str
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body
 	buf := getBuffer()
 	defer putBuffer(buf)
-	buf.ReadFrom(resp.Body)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
 
 	// Check response status
 	if err := checkError(resp); err != nil {
@@ -748,12 +751,14 @@ func (i *Index) DeleteVectorByFilterWithContext(ctx context.Context, filter map[
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body
 	buf := getBuffer()
 	defer putBuffer(buf)
-	buf.ReadFrom(resp.Body)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
 
 	// Check response status
 	if err := checkError(resp); err != nil {
@@ -801,7 +806,7 @@ func (i *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem
 	if err != nil {
 		return VectorItem{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check response status and read body
 	if err := checkError(resp); err != nil {
@@ -811,7 +816,9 @@ func (i *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem
 	// Read response body
 	buf := getBuffer()
 	defer putBuffer(buf)
-	buf.ReadFrom(resp.Body)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return VectorItem{}, fmt.Errorf("failed to read response body: %w", err)
+	}
 
 	// Parse msgpack response
 	var vectorObj []interface{}
