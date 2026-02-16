@@ -21,10 +21,12 @@ func JsonZip(data map[string]interface{}) ([]byte, error) {
 	var b bytes.Buffer
 	w := zlib.NewWriter(&b)
 	if _, err := w.Write(jsonData); err != nil {
-		w.Close()
+		_ = w.Close()
 		return nil, err
 	}
-	w.Close()
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
 
 	return b.Bytes(), nil
 }
@@ -39,7 +41,7 @@ func JsonUnzip(data []byte) (map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	decompressed, err := io.ReadAll(r)
 	if err != nil {

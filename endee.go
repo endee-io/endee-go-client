@@ -125,9 +125,8 @@ func putMap(m map[string]interface{}) {
 
 // getJSONEncoder gets a JSON encoder from the pool
 func getJSONEncoder(w *bytes.Buffer) *json.Encoder {
-	enc := jsonEncoderPool.Get().(*json.Encoder)
-	// Reset the encoder's writer
-	enc = json.NewEncoder(w)
+	_ = jsonEncoderPool.Get().(*json.Encoder)
+	enc := json.NewEncoder(w)
 	return enc
 }
 
@@ -138,9 +137,8 @@ func putJSONEncoder(enc *json.Encoder) {
 
 // getJSONDecoder gets a JSON decoder from the pool
 func getJSONDecoder(r *bytes.Reader) *json.Decoder {
-	dec := jsonDecoderPool.Get().(*json.Decoder)
-	// Reset the decoder's reader
-	dec = json.NewDecoder(r)
+	_ = jsonDecoderPool.Get().(*json.Decoder)
+	dec := json.NewDecoder(r)
 	return dec
 }
 
@@ -259,7 +257,7 @@ func fastJSONUnmarshal(data []byte, v interface{}) error {
 
 // readResponseBody reads the response body and handles errors
 func readResponseBody(resp *http.Response) ([]byte, error) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := checkError(resp); err != nil {
 		return nil, err
@@ -268,7 +266,9 @@ func readResponseBody(resp *http.Response) ([]byte, error) {
 	buf := getBuffer()
 	defer putBuffer(buf)
 
-	buf.ReadFrom(resp.Body)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
 	result := make([]byte, buf.Len())
 	copy(result, buf.Bytes())
 	return result, nil
@@ -386,7 +386,7 @@ func (nd *Endee) ListIndexesWithContext(ctx context.Context) ([]IndexInfo, error
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("error: %d - %s", resp.StatusCode, resp.Status)
@@ -396,7 +396,9 @@ func (nd *Endee) ListIndexesWithContext(ctx context.Context) ([]IndexInfo, error
 	buf := getBuffer()
 	defer putBuffer(buf)
 
-	buf.ReadFrom(resp.Body)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
 
 	var response ListIndexesResponse
 	if err := fastJSONUnmarshal(buf.Bytes(), &response); err != nil {

@@ -1,0 +1,13 @@
+version: "2"
+
+linters:
+  default: standard
+  exclusions:
+    rules:
+      - linters:
+          - staticcheck
+        text: "ST1005"
+      - linters:
+          - unused
+        path: index\.go
+        text: "executeRequest"
