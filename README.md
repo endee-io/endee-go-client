@@ -95,7 +95,7 @@ func main() {
         },
     }
     
-    results, err := index.Query(queryVector, nil, nil, 10, filter, 128, false)
+    results, err := index.Query(queryVector, nil, nil, 10, filter, 128, false, nil)
     if err != nil {
         log.Fatal(err)
     }
@@ -313,10 +313,13 @@ if err != nil {
 queryVector := []float32{/* your query vector */}
 results, err := index.Query(
     queryVector,  // query vector
+    nil,          // sparseIndices (optional, for hybrid search)
+    nil,          // sparseValues (optional, for hybrid search)
     5,            // top_k - number of results (max 512)
     nil,          // filter (optional)
     128,          // ef - runtime parameter (max 1024)
     true,         // include_vectors
+    nil,          // filterParams (optional, for advanced filtering)
 )
 if err != nil {
     log.Fatal(err)
@@ -331,10 +334,15 @@ for _, result := range results {
 **Query Parameters:**
 
 - `vector`: Query vector (must match index dimension)
+- `sparseIndices`: Sparse vector indices (optional, for hybrid search)
+- `sparseValues`: Sparse vector values (optional, for hybrid search)
 - `k`: Number of nearest neighbors to return (max 512, default: 10)
 - `filter`: Optional filter criteria (map[string]interface{})
 - `ef`: Runtime search parameter - higher values improve recall but increase latency (max 1024, default: 128)
 - `includeVectors`: Whether to return the actual vector data in results (default: false)
+- `filterParams`: Advanced filter parameters (optional, *FilterParams):
+  - `BoostPercentage`: Expand candidate pool by X% during filtered search (0-100, default: 0)
+  - `PrefilterThreshold`: Switch to brute-force when matches < threshold (1000-1000000, default: 10000)
 
 **Result Fields:**
 
@@ -368,7 +376,7 @@ filter := map[string]interface{}{
     },
 }
 
-results, err := index.Query(queryVector, 5, filter, 128, true)
+results, err := index.Query(queryVector, nil, nil, 5, filter, 128, true, nil)
 if err != nil {
     log.Fatal(err)
 }
@@ -527,7 +535,7 @@ index, err := client.GetIndexWithContext(ctx, "my_index")
 
 err = index.UpsertWithContext(ctx, vectors)
 
-results, err := index.QueryWithContext(ctx, queryVector, 10, nil, 128, false)
+results, err := index.QueryWithContext(ctx, queryVector, nil, nil, 10, nil, 128, false, nil)
 
 err = client.DeleteIndexWithContext(ctx, "my_index")
 ```
@@ -551,7 +559,7 @@ err = client.DeleteIndexWithContext(ctx, "my_index")
 | Method | Description |
 |--------|-------------|
 | `Upsert(vectors []VectorItem) error` | Insert or update vectors (max 1000 per batch) |
-| `Query(vector, sparseIndices, sparseValues, k, filter, ef, includeVectors) ([]QueryResult, error)` | Search for similar vectors |
+| `Query(vector, sparseIndices, sparseValues, k, filter, ef, includeVectors, filterParams) ([]QueryResult, error)` | Search for similar vectors |
 | `DeleteVectorById(id string) (string, error)` | Delete a vector by ID |
 | `DeleteVectorByFilter(filter map[string]interface{}) (string, error)` | Delete vectors matching a specific filter |
 | `GetVector(id string) (VectorItem, error)` | Get a specific vector by ID |
