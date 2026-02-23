@@ -72,15 +72,22 @@ type QueryResult struct {
 	Vector     []float32              `json:"vector,omitempty"`
 }
 
+// FilterParams represents advanced filtering parameters for HNSW search
+type FilterParams struct {
+	BoostPercentage    int `json:"boost_percentage,omitempty"`
+	PrefilterThreshold int `json:"prefilter_threshold,omitempty"`
+}
+
 // QueryRequest represents the search request payload
 type QueryRequest struct {
-	Vector         []float32 `json:"vector,omitempty"`
-	SparseIndices  []int     `json:"sparse_indices,omitempty"`
-	SparseValues   []float32 `json:"sparse_values,omitempty"`
-	TopK           int       `json:"k"`
-	Ef             int       `json:"ef"`
-	IncludeVectors bool      `json:"include_vectors"`
-	Filter         string    `json:"filter,omitempty"`
+	Vector         []float32     `json:"vector,omitempty"`
+	SparseIndices  []int         `json:"sparse_indices,omitempty"`
+	SparseValues   []float32     `json:"sparse_values,omitempty"`
+	TopK           int           `json:"k"`
+	Ef             int           `json:"ef"`
+	IncludeVectors bool          `json:"include_vectors"`
+	Filter         string        `json:"filter,omitempty"`
+	FilterParams   *FilterParams `json:"filter_params,omitempty"`
 }
 
 // NewIndex creates a new Index instance similar to Python's __init__
@@ -388,12 +395,12 @@ func (i *Index) GetInfo() string {
 		i.Name, i.Dimension, i.SparseDim, i.SpaceType, i.Count, i.Precision, i.M)
 }
 
-func (i *Index) Query(vector []float32, sparseIndices []int, sparseValues []float32, k int, filter map[string]interface{}, ef int, includeVectors bool) ([]QueryResult, error) {
-	return i.QueryWithContext(context.Background(), vector, sparseIndices, sparseValues, k, filter, ef, includeVectors)
+func (i *Index) Query(vector []float32, sparseIndices []int, sparseValues []float32, k int, filter map[string]interface{}, ef int, includeVectors bool, filterParams *FilterParams) ([]QueryResult, error) {
+	return i.QueryWithContext(context.Background(), vector, sparseIndices, sparseValues, k, filter, ef, includeVectors, filterParams)
 }
 
 // QueryWithContext performs vector similarity search with context support
-func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIndices []int, sparseValues []float32, k int, filter map[string]interface{}, ef int, includeVectors bool) ([]QueryResult, error) {
+func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIndices []int, sparseValues []float32, k int, filter map[string]interface{}, ef int, includeVectors bool, filterParams *FilterParams) ([]QueryResult, error) {
 	// Validate parameters
 	if k <= 0 || k > MaxTopKAllowed {
 		return nil, fmt.Errorf("top_k must be between 1 and %d", MaxTopKAllowed)
@@ -420,6 +427,17 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 		return nil, fmt.Errorf("sparse_indices and sparse_values must have the same length")
 	}
 
+	// Validate filter parameters if provided
+	if filterParams != nil {
+		if filterParams.BoostPercentage < 0 || filterParams.BoostPercentage > 100 {
+			return nil, fmt.Errorf("filter_boost_percentage must be between 0 and 100")
+		}
+		if filterParams.PrefilterThreshold != 0 &&
+			(filterParams.PrefilterThreshold < 1000 || filterParams.PrefilterThreshold > 1000000) {
+			return nil, fmt.Errorf("prefilter_cardinality_threshold must be between 1,000 and 1,000,000")
+		}
+	}
+
 	// Normalize query vector
 	normalizedVector, norm, err := i.normalizeVector(vector)
 	if err != nil {
@@ -435,6 +453,7 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 		TopK:           k,
 		Ef:             ef,
 		IncludeVectors: includeVectors,
+		FilterParams:   filterParams,
 	}
 
 	// Add filter if provided
