@@ -11,8 +11,8 @@ const (
 	PrecisionBinary  = "binary"  // Binary vectors (1 bit per dimension)
 	PrecisionFloat16 = "float16" // 16-bit floating point
 	PrecisionFloat32 = "float32" // 32-bit floating point
-	PrecisionInt16D  = "int16d"  // 16-bit integer
-	PrecisionInt8D   = "int8d"   // 8-bit integer
+	PrecisionInt16   = "int16"   // 16-bit integer
+	PrecisionInt8    = "int8"    // 8-bit integer
 )
 
 // PrecisionTypesSupported lists all supported precision types
@@ -20,8 +20,8 @@ var PrecisionTypesSupported = []string{
 	PrecisionBinary,
 	PrecisionFloat16,
 	PrecisionFloat32,
-	PrecisionInt16D,
-	PrecisionInt8D,
+	PrecisionInt16,
+	PrecisionInt8,
 }
 
 // Checksum value while creating an index

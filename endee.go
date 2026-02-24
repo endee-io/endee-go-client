@@ -287,7 +287,7 @@ func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimens
 
 	// Set default precision if not provided
 	if precision == "" {
-		precision = PrecisionInt8D
+		precision = PrecisionInt8
 	}
 
 	// Validate dimension
