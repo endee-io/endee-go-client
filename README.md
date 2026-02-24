@@ -52,7 +52,7 @@ func main() {
         "cosine",         // space_type (cosine, l2, ip)
         16,               // M - HNSW connectivity parameter
         128,              // ef_con - construction parameter
-        endee.PrecisionFloat32, // precision (float32, float16, int16d, int8d, binary)
+        endee.PrecisionFloat32, // precision (float32, float16, int16, int8, binary)
         nil,              // version (optional)
         0,                // sparse_dim (optional, 0 for dense-only)
     )
@@ -192,7 +192,7 @@ if err != nil {
 - `spaceType`: Distance metric - `"cosine"`, `"l2"`, or `"ip"` (inner product)
 - `M`: HNSW graph connectivity parameter - higher values increase recall but use more memory (default: 16)
 - `efCon`: HNSW construction parameter - higher values improve index quality but slow down indexing (default: 128)
-- `precision`: Support for multiple precision levels - `PrecisionFloat32`, `PrecisionFloat16`, `PrecisionInt16D`, `PrecisionInt8D`, `PrecisionBinary`
+- `precision`: Support for multiple precision levels - `PrecisionFloat32`, `PrecisionFloat16`, `PrecisionInt16`, `PrecisionInt8`, `PrecisionBinary`
 - `version`: Optional version parameter for index versioning
 - `sparseDim`: Dimension for sparse vectors (0 for dense-only)
 
@@ -204,8 +204,8 @@ The Go client supports various precision levels for memory/accuracy tradeoffs:
 |-----------|----------|-----------|--------------|----------|
 | FP32 (default) | `PrecisionFloat32` | 32-bit float | Highest | Maximum accuracy |
 | FP16 | `PrecisionFloat16` | 16-bit float | ~50% less | Good accuracy, lower memory |
-| INT16 | `PrecisionInt16D` | 16-bit int | Optimized | Quantized accuracy |
-| INT8 | `PrecisionInt8D` | 8-bit int | ~75% less | Maximum memory savings |
+| INT16 | `PrecisionInt16` | 16-bit int | Optimized | Quantized accuracy |
+| INT8 | `PrecisionInt8` | 8-bit int | ~75% less | Maximum memory savings |
 | Binary | `PrecisionBinary` | 1-bit | Minimum | Fast, low-memory keyword-like search |
 
 **Example with different precision levels:**
@@ -217,7 +217,7 @@ client := endee.EndeeClient("your-token-here")
 err := client.CreateIndex("high_accuracy_index", 768, "cosine", 16, 128, endee.PrecisionFloat32, nil, 0)
 
 // Memory-optimized index (INT8)
-err = client.CreateIndex("low_memory_index", 768, "cosine", 16, 128, endee.PrecisionInt8D, nil, 0)
+err = client.CreateIndex("low_memory_index", 768, "cosine", 16, 128, endee.PrecisionInt8, nil, 0)
 ```
 
 ### Get an Index
@@ -599,8 +599,8 @@ const (
     PrecisionBinary  = "binary"   // 1-bit binary quantization
     PrecisionFloat16 = "float16"  // 16-bit floating point
     PrecisionFloat32 = "float32"  // 32-bit floating point
-    PrecisionInt16D  = "int16d"   // 16-bit integer quantization
-    PrecisionInt8D   = "int8d"    // 8-bit integer quantization
+    PrecisionInt16   = "int16"   // 16-bit integer quantization
+    PrecisionInt8    = "int8"    // 8-bit integer quantization
 )
 
 // Distance metrics

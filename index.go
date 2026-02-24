@@ -96,7 +96,7 @@ func NewIndex(name string, token string, url string, version int, params *IndexP
 		version = 1 // Default version
 	}
 
-	precision := PrecisionInt8D
+	precision := PrecisionInt8
 	if params != nil && params.Precision != "" {
 		precision = params.Precision
 	}
