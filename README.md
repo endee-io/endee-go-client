@@ -204,8 +204,8 @@ The Go client supports various precision levels for memory/accuracy tradeoffs:
 |-----------|----------|-----------|--------------|----------|
 | FP32 | `PrecisionFloat32` | 32-bit float | Highest | Maximum accuracy |
 | FP16 | `PrecisionFloat16` | 16-bit float | ~50% less | Good accuracy, lower memory |
-| INT16 | `PrecisionInt16` | 16-bit int | Optimized | Quantized accuracy |
-| INT8 (default) | `PrecisionInt8` | 8-bit int | ~75% less | Maximum memory savings |
+| INT16 (default) | `PrecisionInt16` | 16-bit int | Optimized | Quantized accuracy |
+| INT8 | `PrecisionInt8` | 8-bit int | ~75% less | Maximum memory savings |
 | Binary | `PrecisionBinary` | 1-bit | Minimum | Fast, low-memory keyword-like search |
 
 **Example with different precision levels:**
