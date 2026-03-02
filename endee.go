@@ -66,6 +66,7 @@ type IndexInfo struct {
 	CreatedAt     int64  `json:"created_at"`
 	Precision     string `json:"precision,omitempty"`
 	M             int    `json:"M,omitempty"`
+	EfCon         int    `json:"ef_con,omitempty"`
 	SparseDim     int    `json:"sparse_dim,omitempty"`
 }
 
@@ -441,6 +442,7 @@ type GetIndexResponse struct {
 	Dimension     int    `json:"dimension"`
 	Precision     string `json:"precision"`
 	M             int    `json:"M"`
+	EfCon         int    `json:"ef_con"`
 	CreatedAt     int64  `json:"created_at"`
 	Name          string `json:"name"`
 	SparseDim     int    `json:"sparse_dim"`
@@ -482,6 +484,7 @@ func (nd *Endee) GetIndexWithContext(ctx context.Context, name string) (*Index, 
 		SparseDim:     data.SparseDim,
 		Precision:     data.Precision,
 		M:             data.M,
+		EfCon:         data.EfCon,
 	}
 
 	// Create and return Index object
