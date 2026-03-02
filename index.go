@@ -40,6 +40,7 @@ type IndexParams struct {
 	SparseDim     int    `json:"sparse_dim"`
 	Precision     string `json:"precision"`
 	M             int    `json:"M"`
+	EfCon         int    `json:"ef_con"`
 }
 
 // VectorItem represents a vector with metadata for upserting
