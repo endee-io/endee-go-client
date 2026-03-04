@@ -79,6 +79,17 @@ type FilterParams struct {
 	PrefilterThreshold int `json:"prefilter_threshold,omitempty"`
 }
 
+// FilterUpdateItem represents a single filter update item
+type FilterUpdateItem struct {
+	ID     string                 `json:"id"`
+	Filter map[string]interface{} `json:"filter"`
+}
+
+// FilterUpdateRequest represents the request payload for updating filters
+type FilterUpdateRequest struct {
+	Updates []FilterUpdateItem `json:"updates"`
+}
+
 // QueryRequest represents the search request payload
 type QueryRequest struct {
 	Vector         []float32     `json:"vector,omitempty"`
@@ -938,6 +949,58 @@ func (i *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem
 		Meta:          meta,
 		Filter:        filter,
 	}, nil
+}
+
+// UpdateFilters updates filters for multiple vectors by ID
+func (i *Index) UpdateFilters(updates []FilterUpdateItem) (string, error) {
+	return i.UpdateFiltersWithContext(context.Background(), updates)
+}
+
+func (i *Index) UpdateFiltersWithContext(ctx context.Context, updates []FilterUpdateItem) (string, error) {
+	// Validate updates
+	if len(updates) == 0 {
+		return "", fmt.Errorf("updates cannot be empty")
+	}
+
+	for idx, update := range updates {
+		if strings.TrimSpace(update.ID) == "" {
+			return "", fmt.Errorf("id must not be empty (update index %d)", idx)
+		}
+		if update.Filter == nil {
+			return "", fmt.Errorf("filter cannot be nil (update index %d, id: %s)", idx, update.ID)
+		}
+	}
+
+	// Prepare request body
+	requestData := FilterUpdateRequest{
+		Updates: updates,
+	}
+
+	jsonData, err := json.Marshal(requestData)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request data: %w", err)
+	}
+
+	// Execute request using helper method with context
+	resp, err := i.executeRequestWithContext(ctx, "POST", fmt.Sprintf("index/%s/filters/update", i.Name), jsonData, "application/json")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Check response status
+	if err := checkError(resp); err != nil {
+		return "", err
+	}
+
+	// Read response body
+	buf := getBuffer()
+	defer putBuffer(buf)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return buf.String(), nil
 }
 
 // safeStringConvert safely converts interface{} to string, handling both string and []uint8 cases

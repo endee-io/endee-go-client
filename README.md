@@ -504,6 +504,57 @@ if err != nil {
 fmt.Printf("Vector: %+v\n", vector)
 ```
 
+### Update Filters
+
+The `index.UpdateFilters()` method updates filter metadata for multiple vectors by ID without modifying the vector data itself or other metadata fields. This is useful when you need to change filtering criteria for existing vectors.
+
+```go
+client := endee.EndeeClient("your-token-here")
+
+// Accessing the index
+index, err := client.GetIndex("your-index-name")
+if err != nil {
+    log.Fatal(err)
+}
+
+// Update filters for multiple vectors
+updates := []endee.FilterUpdateItem{
+    {
+        ID: "vec1",
+        Filter: map[string]interface{}{
+            "category": "B",
+        },
+    },
+    {
+        ID: "vec2",
+        Filter: map[string]interface{}{
+            "category": "C",
+            "priority": 1,
+        },
+    },
+}
+
+result, err := index.UpdateFilters(updates)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(result) // "2 filters updated"
+```
+
+**Parameters:**
+
+- `updates`: Slice of `FilterUpdateItem`, each containing:
+  - `ID`: Vector identifier (required, must not be empty)
+  - `Filter`: New filter metadata to set (map[string]interface{})
+
+**Returns:** Success message with the number of filters updated
+
+**Important Notes:**
+
+- Only the filter metadata is updated; vector data and other metadata remain unchanged
+- All specified filter fields for a vector are replaced with the new filter data
+- If a vector ID doesn't exist, the operation will fail for that specific update
+
 ### Get Index Info
 
 ```go
@@ -563,6 +614,7 @@ err = client.DeleteIndexWithContext(ctx, "my_index")
 | `DeleteVectorById(id string) (string, error)` | Delete a vector by ID |
 | `DeleteVectorByFilter(filter map[string]interface{}) (string, error)` | Delete vectors matching a specific filter |
 | `GetVector(id string) (VectorItem, error)` | Get a specific vector by ID |
+| `UpdateFilters(updates []FilterUpdateItem) (string, error)` | Update filter metadata for multiple vectors by ID |
 | `GetInfo() string` | Get index statistics and configuration |
 | `String() string` | Get string representation of index |
 
@@ -586,6 +638,12 @@ type QueryResult struct {
     Filter     map[string]interface{} `json:"filter,omitempty"`
     Norm       float32                `json:"norm"`
     Vector     []float32              `json:"vector,omitempty"`
+}
+
+// FilterUpdateItem represents a filter update for a single vector
+type FilterUpdateItem struct {
+    ID     string                 `json:"id"`
+    Filter map[string]interface{} `json:"filter"`
 }
 ```
 
