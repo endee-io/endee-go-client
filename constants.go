@@ -1,21 +1,17 @@
 package endee
 
-import (
-	"regexp"
-	"time"
-)
+import "time"
 
-// Precision types for vector indices (quantization levels)
-// Defines the data types available for storing vector embeddings
+// Precision types for vector indices (quantization levels).
 const (
 	PrecisionBinary  = "binary"  // Binary vectors (1 bit per dimension)
 	PrecisionFloat16 = "float16" // 16-bit floating point
 	PrecisionFloat32 = "float32" // 32-bit floating point
-	PrecisionInt16   = "int16"   // 16-bit integer
-	PrecisionInt8    = "int8"    // 8-bit integer
+	PrecisionInt16   = "int16"   // 16-bit integer (default)
+	PrecisionInt8    = "int8"    // 8-bit integer (memory efficient)
 )
 
-// PrecisionTypesSupported lists all supported precision types
+// PrecisionTypesSupported lists all supported precision types.
 var PrecisionTypesSupported = []string{
 	PrecisionBinary,
 	PrecisionFloat16,
@@ -24,49 +20,48 @@ var PrecisionTypesSupported = []string{
 	PrecisionInt8,
 }
 
-// Checksum value while creating an index
+// Checksum value used when creating an index.
 const Checksum = -1
 
-// HTTP Configuration
+// HTTP protocol prefixes.
 const (
 	HTTPSProtocol = "https://"
 	HTTPProtocol  = "http://"
 )
 
-// HTTPMethodsAllowed defines allowed HTTP methods for API requests
+// HTTPMethodsAllowed defines the allowed HTTP methods for API requests.
 var HTTPMethodsAllowed = []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
 
-// HTTPStatusCodes defines status codes that trigger automatic retries
+// HTTPStatusCodes defines status codes that trigger automatic retries.
 var HTTPStatusCodes = []int{429, 500, 502, 503, 504}
 
-// API Endpoints
+// API endpoints.
 const (
 	LocalBaseURL     = "http://127.0.0.1:8080/api/v1"
 	CloudURLTemplate = "https://%s.endee.io/api/v1"
 	LocalRegion      = "local"
 )
 
-// Vector Index Limits
+// Vector index limits.
 const (
-	MaxDimensionAllowed    = 10000 // Maximum vector dimensionality allowed
-	MaxVectorsPerBatch     = 1000  // Maximum number of vectors in a single batch operation
-	MaxTopKAllowed         = 512   // Maximum number of nearest neighbors (top-k) that can be retrieved
-	MaxEfSearchAllowed     = 1024  // Maximum ef_search parameter for HNSW query accuracy
-	MaxIndexNameLenAllowed = 48    // Maximum length for index names (alphanumeric + underscores)
+	MaxDimensionAllowed    = 10000 // Maximum vector dimensionality
+	MaxVectorsPerBatch     = 1000  // Maximum vectors per batch operation
+	MaxTopKAllowed         = 512   // Maximum nearest neighbors (top-k)
+	MaxEfSearchAllowed     = 1024  // Maximum ef_search parameter
+	MaxIndexNameLenAllowed = 48    // Maximum index name length
 )
 
-// Distance metric types
+// Distance metric types.
 const (
 	Cosine       = "cosine" // Cosine similarity (normalized dot product)
 	L2           = "l2"     // Euclidean distance (L2 norm)
 	InnerProduct = "ip"     // Inner product (dot product)
 )
 
-// SpaceTypesSupported lists all supported distance/space types
+// SpaceTypesSupported lists all supported distance/space types.
 var SpaceTypesSupported = []string{Cosine, L2, InnerProduct}
 
-// API Field Names
-// Common field names used in API requests/responses
+// API field name constants used in JSON tags.
 const (
 	AuthorizationHeader = "Authorization"
 	NameField           = "name"
@@ -79,29 +74,12 @@ const (
 	MaxConnectionsField = "M"
 )
 
-// Session Configuration (for HTTP clients)
+// HNSW algorithm defaults.
 const (
-	// Requests Library Session Configuration
-	SessionPoolConnections = 1  // Number of connection pools to cache (one per unique host)
-	SessionPoolMaxSize     = 10 // Maximum number of connections to save in each pool for reuse
-	SessionMaxRetries      = 3  // Maximum number of retry attempts for failed requests
-
-	// HTTPX Library Client Configuration
-	HTTPXMaxConnections          = 1    // Maximum total connections across all hosts
-	HTTPXMaxKeepaliveConnections = 10   // Maximum idle connections to keep alive for reuse
-	HTTPXMaxRetries              = 3    // Maximum number of retry attempts for failed requests
-	HTTPXTimeoutSec              = 30.0 // Request timeout in seconds (prevents hanging requests)
+	DefaultM               = 16               // Bi-directional links per node in HNSW graph
+	DefaultEfConstruction  = 128              // Candidate list size during index construction
+	DefaultSparseDimension = 0                // 0 = dense-only; > 0 = hybrid index
+	DefaultTopK            = 10               // Default nearest neighbors to return
+	DefaultEfSearch        = 128              // Candidate list size during search
+	DefaultTimeout         = 30 * time.Second // Default HTTP request timeout
 )
-
-// HNSW Algorithm Defaults
-const (
-	DefaultM               = 16  // Default M parameter: number of bi-directional links per node in HNSW graph
-	DefaultEfConstruction  = 128 // Default ef_construction: size of dynamic candidate list during index construction
-	DefaultSparseDimension = 0   // Default sparse dimension (0 means dense-only vectors, no sparse component)
-	DefaultTopK            = 10  // Default number of nearest neighbors to return in search queries
-	DefaultEfSearch        = 128 // Default ef_search: size of dynamic candidate list during search
-	DefaultTimeout         = 30 * time.Second
-)
-
-// Pre-compiled regex for name validation
-var NameRegex = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
