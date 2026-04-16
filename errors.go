@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-// Base API Error
+// APIError represents a generic API error response.
 type APIError struct {
 	StatusCode int
 	Message    string
@@ -17,7 +17,7 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("Endee API Error %d: %s", e.StatusCode, e.Message)
 }
 
-// Specific Error Types
+// AuthenticationError represents an authentication failure (401).
 type AuthenticationError struct {
 	Message string
 }
@@ -26,6 +26,7 @@ func (e *AuthenticationError) Error() string {
 	return fmt.Sprintf("Authentication Error: %s", e.Message)
 }
 
+// NotFoundError represents a resource not found error (404).
 type NotFoundError struct {
 	Message string
 }
@@ -34,6 +35,7 @@ func (e *NotFoundError) Error() string {
 	return fmt.Sprintf("Resource Not Found: %s", e.Message)
 }
 
+// ForbiddenError represents a forbidden access error (403).
 type ForbiddenError struct {
 	Message string
 }
@@ -42,6 +44,7 @@ func (e *ForbiddenError) Error() string {
 	return fmt.Sprintf("Forbidden: %s", e.Message)
 }
 
+// ConflictError represents a resource conflict error (409).
 type ConflictError struct {
 	Message string
 }
@@ -50,6 +53,7 @@ func (e *ConflictError) Error() string {
 	return fmt.Sprintf("Conflict: %s", e.Message)
 }
 
+// SubscriptionError represents a subscription-related error (402).
 type SubscriptionError struct {
 	Message string
 }
@@ -58,6 +62,7 @@ func (e *SubscriptionError) Error() string {
 	return fmt.Sprintf("Subscription Error: %s", e.Message)
 }
 
+// ServerError represents a server error (5xx status codes).
 type ServerError struct {
 	Message string
 }
@@ -66,7 +71,7 @@ func (e *ServerError) Error() string {
 	return fmt.Sprintf("Server Busy: %s", e.Message)
 }
 
-// checkError checks the response status code and returns a corresponding error if not 200 OK
+// checkError checks the response status code and returns a corresponding error if not 200 OK.
 func checkError(resp *http.Response) error {
 	if resp.StatusCode == http.StatusOK {
 		return nil

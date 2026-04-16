@@ -14,31 +14,32 @@ import (
 	"time"
 )
 
-// Valid space types
+// Valid space types.
 var validSpaceTypes = map[string]bool{
 	"cosine": true,
 	"l2":     true,
 	"ip":     true,
 }
 
-// Advanced memory pools for various objects
+// Advanced memory pools for various objects.
 var (
-	// Buffer pool for reusing byte buffers
+	// Buffer pool for reusing byte buffers.
 	bufferPool = sync.Pool{
 		New: func() interface{} {
 			buf := make([]byte, 0, 1024) // Pre-allocate 1KB
+
 			return bytes.NewBuffer(buf)
 		},
 	}
 
-	// Map pool for metadata and filters
+	// Map pool for metadata and filters.
 	mapPool = sync.Pool{
 		New: func() interface{} {
 			return make(map[string]interface{}, 10)
 		},
 	}
 
-	// JSON encoder & decoder pool for streaming operations
+	// JSON encoder & decoder pool for streaming operations.
 	jsonEncoderPool = sync.Pool{
 		New: func() interface{} {
 			return json.NewEncoder(&bytes.Buffer{})
@@ -52,12 +53,14 @@ var (
 	}
 )
 
+// Endee represents the main client for interacting with the Endee vector database API.
 type Endee struct {
-	BaseUrl string
+	BaseURL string
 	Token   string
 	HTTP    *http.Client
 }
 
+// IndexInfo represents metadata about a vector index.
 type IndexInfo struct {
 	Name          string `json:"name"`
 	Dimension     int    `json:"dimension"`
@@ -67,102 +70,109 @@ type IndexInfo struct {
 	Precision     string `json:"precision,omitempty"`
 	M             int    `json:"M,omitempty"`
 	EfCon         int    `json:"ef_con,omitempty"`
-	SparseDim     int    `json:"sparse_dim,omitempty"`
+	SparseModel   string `json:"sparse_model,omitempty"`
 }
 
+// ListIndexesResponse represents the response from the list indexes API endpoint.
 type ListIndexesResponse struct {
 	Indexes []IndexInfo `json:"indexes"` // This tag MUST match the JSON key exactly
 }
 
+// CreateIndexRequest represents the request payload for creating a new index.
 type CreateIndexRequest struct {
-	Name      string `json:"index_name"`
-	Dimension int    `json:"dim"`
-	SpaceType string `json:"space_type"`
-	M         int    `json:"M"`
-	EfCon     int    `json:"ef_con"`
-	Checksum  int    `json:"checksum"`
-	Precision string `json:"precision"`
-	Version   int    `json:"version"`
-	SparseDim int    `json:"sparse_dim"`
+	Name        string `json:"index_name"`
+	Dimension   int    `json:"dim"`
+	SpaceType   string `json:"space_type"`
+	M           int    `json:"M"`
+	EfCon       int    `json:"ef_con"`
+	Checksum    int    `json:"checksum"`
+	Precision   string `json:"precision"`
+	Version     int    `json:"version"`
+	SparseModel string `json:"sparse_model,omitempty"`
 }
 
-// isValidIndexName validates that the index name is alphanumeric with underscores and less than 48 characters
+// isValidIndexName validates that the index name is alphanumeric with underscores and less than 48 characters.
 func isValidIndexName(name string) bool {
 	if len(name) == 0 || len(name) >= MaxIndexNameLenAllowed {
 		return false
 	}
+
 	return NameRegex.MatchString(name)
 }
 
-// Advanced pool management functions
+// Advanced pool management functions.
 
-// getBuffer gets a buffer from the pool
+// getBuffer gets a buffer from the pool.
 func getBuffer() *bytes.Buffer {
 	return bufferPool.Get().(*bytes.Buffer)
 }
 
-// putBuffer returns a buffer to the pool after resetting it
+// putBuffer returns a buffer to the pool after resetting it.
 func putBuffer(buf *bytes.Buffer) {
 	buf.Reset()
 	bufferPool.Put(buf)
 }
 
-// getMap gets a map from the pool
+// getMap gets a map from the pool.
 func getMap() map[string]interface{} {
 	m := mapPool.Get().(map[string]interface{})
 	// Clear the map
 	for k := range m {
 		delete(m, k)
 	}
+
 	return m
 }
 
-// putMap returns a map to the pool
+// putMap returns a map to the pool.
 func putMap(m map[string]interface{}) {
 	if m != nil && len(m) < 100 {
 		mapPool.Put(m)
 	}
 }
 
-// getJSONEncoder gets a JSON encoder from the pool
+// getJSONEncoder gets a JSON encoder from the pool.
 func getJSONEncoder(w *bytes.Buffer) *json.Encoder {
 	_ = jsonEncoderPool.Get().(*json.Encoder)
 	enc := json.NewEncoder(w)
+
 	return enc
 }
 
-// putJSONEncoder returns a JSON encoder to the pool
+// putJSONEncoder returns a JSON encoder to the pool.
 func putJSONEncoder(enc *json.Encoder) {
 	jsonEncoderPool.Put(enc)
 }
 
-// getJSONDecoder gets a JSON decoder from the pool
+// getJSONDecoder gets a JSON decoder from the pool.
 func getJSONDecoder(r *bytes.Reader) *json.Decoder {
 	_ = jsonDecoderPool.Get().(*json.Decoder)
 	dec := json.NewDecoder(r)
+
 	return dec
 }
 
-// putJSONDecoder returns a JSON decoder to the pool
+// putJSONDecoder returns a JSON decoder to the pool.
 func putJSONDecoder(dec *json.Decoder) {
 	jsonDecoderPool.Put(dec)
 }
 
-// buildURL efficiently builds API URLs
+// buildURL efficiently builds API URLs.
 func (nd *Endee) buildURL(path string) string {
 	var builder strings.Builder
-	builder.Grow(len(nd.BaseUrl) + len(path) + 1)
-	builder.WriteString(nd.BaseUrl)
-	if !strings.HasSuffix(nd.BaseUrl, "/") && !strings.HasPrefix(path, "/") {
+	builder.Grow(len(nd.BaseURL) + len(path) + 1)
+	builder.WriteString(nd.BaseURL)
+	if !strings.HasSuffix(nd.BaseURL, "/") && !strings.HasPrefix(path, "/") {
 		builder.WriteString("/")
 	}
 	builder.WriteString(path)
+
 	return builder.String()
 }
 
 // EndeeClient creates an optimized client. token is optional.
 func EndeeClient(token ...string) *Endee {
-	baseUrl := LocalBaseURL
+	baseURL := LocalBaseURL
 	var finalToken string
 
 	// Handle optional token logic
@@ -172,7 +182,7 @@ func EndeeClient(token ...string) *Endee {
 
 		if len(tokenParts) > 2 {
 			// Extract region from 3rd part of token for Cloud URL
-			baseUrl = fmt.Sprintf(CloudURLTemplate, tokenParts[2])
+			baseURL = fmt.Sprintf(CloudURLTemplate, tokenParts[2])
 			finalToken = fmt.Sprintf("%s:%s", tokenParts[0], tokenParts[1])
 		} else {
 			finalToken = t
@@ -201,7 +211,7 @@ func EndeeClient(token ...string) *Endee {
 	}
 
 	return &Endee{
-		BaseUrl: baseUrl,
+		BaseURL: baseURL,
 		Token:   finalToken,
 		HTTP: &http.Client{
 			Timeout:   DefaultTimeout,
@@ -210,7 +220,7 @@ func EndeeClient(token ...string) *Endee {
 	}
 }
 
-// executeRequestWithContext executes HTTP requests with context for cancellation and timeout
+// executeRequestWithContext executes HTTP requests with context for cancellation and timeout.
 func (nd *Endee) executeRequestWithContext(ctx context.Context, req *http.Request) (*http.Response, error) {
 	req = req.WithContext(ctx)
 	req.Header.Set("Authorization", nd.Token)
@@ -223,7 +233,7 @@ func (nd *Endee) executeRequestWithContext(ctx context.Context, req *http.Reques
 	return resp, nil
 }
 
-// fastJSONMarshal uses streaming JSON encoder for better performance
+// fastJSONMarshal uses streaming JSON encoder for better performance.
 func fastJSONMarshal(v interface{}) ([]byte, error) {
 	buf := getBuffer()
 	defer putBuffer(buf)
@@ -232,7 +242,7 @@ func fastJSONMarshal(v interface{}) ([]byte, error) {
 	defer putJSONEncoder(enc)
 
 	if err := enc.Encode(v); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to encode JSON: %w", err)
 	}
 
 	// Remove trailing newline that json.Encoder adds
@@ -244,19 +254,24 @@ func fastJSONMarshal(v interface{}) ([]byte, error) {
 	// Copy data since we're returning the buffer to pool
 	result := make([]byte, len(data))
 	copy(result, data)
+
 	return result, nil
 }
 
-// fastJSONUnmarshal uses streaming JSON decoder for better performance
+// fastJSONUnmarshal uses streaming JSON decoder for better performance.
 func fastJSONUnmarshal(data []byte, v interface{}) error {
 	reader := bytes.NewReader(data)
 	dec := getJSONDecoder(reader)
 	defer putJSONDecoder(dec)
 
-	return dec.Decode(v)
+	if err := dec.Decode(v); err != nil {
+		return fmt.Errorf("failed to decode JSON: %w", err)
+	}
+
+	return nil
 }
 
-// readResponseBody reads the response body and handles errors
+// readResponseBody reads the response body and handles errors.
 func readResponseBody(resp *http.Response) ([]byte, error) {
 	defer func() { _ = resp.Body.Close() }()
 
@@ -272,15 +287,17 @@ func readResponseBody(resp *http.Response) ([]byte, error) {
 	}
 	result := make([]byte, buf.Len())
 	copy(result, buf.Bytes())
+
 	return result, nil
 }
 
-func (nd *Endee) CreateIndex(name string, dimension int, spaceType string, M int, efCon int, precision string, version *int, sparseDim int) error {
-	return nd.CreateIndexWithContext(context.Background(), name, dimension, spaceType, M, efCon, precision, version, sparseDim)
+// CreateIndex creates a new vector index with the specified parameters.
+func (nd *Endee) CreateIndex(name string, dimension int, spaceType string, m int, efCon int, precision string, version *int, sparseModel string) error {
+	return nd.CreateIndexWithContext(context.Background(), name, dimension, spaceType, m, efCon, precision, version, sparseModel)
 }
 
-// CreateIndexWithContext creates an index with context support for cancellation
-func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimension int, spaceType string, M int, efCon int, precision string, version *int, sparseDim int) error {
+// CreateIndexWithContext creates an index with context support for cancellation.
+func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimension int, spaceType string, m int, efCon int, precision string, version *int, sparseModel string) error {
 	// Validate index name
 	if !isValidIndexName(name) {
 		return errors.New("invalid index name. Index name must be alphanumeric and can contain underscores and less than 48 characters")
@@ -297,8 +314,8 @@ func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimens
 	}
 
 	// Validate M
-	if M <= 0 {
-		return fmt.Errorf("M must be greater than 0")
+	if m <= 0 {
+		return fmt.Errorf("m must be greater than 0")
 	}
 
 	// Validate ef_con
@@ -317,6 +334,7 @@ func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimens
 	for _, p := range PrecisionTypesSupported {
 		if p == precision {
 			validPrecision = true
+
 			break
 		}
 	}
@@ -324,9 +342,13 @@ func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimens
 		return fmt.Errorf("invalid precision: %s. Must be one of: %v", precision, PrecisionTypesSupported)
 	}
 
-	// Validate sparse_dim
-	if sparseDim < 0 {
-		return fmt.Errorf("sparse_dim must be non-negative")
+	// Validate and normalize sparse_model
+	sparseModel = strings.ToLower(sparseModel)
+	if sparseModel == "none" {
+		sparseModel = ""
+	}
+	if sparseModel != "" && sparseModel != SparseModelDefault && sparseModel != SparseModelEndEeBM25 {
+		return fmt.Errorf("invalid sparse_model: %s. Must be one of: %v or empty", sparseModel, []string{SparseModelDefault, SparseModelEndEeBM25})
 	}
 
 	// Handle version
@@ -337,15 +359,15 @@ func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimens
 
 	// Create request payload
 	requestData := CreateIndexRequest{
-		Name:      name,
-		Dimension: dimension,
-		SpaceType: spaceType,
-		M:         M,
-		EfCon:     efCon,
-		Checksum:  Checksum,
-		Precision: precision,
-		Version:   finalVersion,
-		SparseDim: sparseDim,
+		Name:        name,
+		Dimension:   dimension,
+		SpaceType:   spaceType,
+		M:           m,
+		EfCon:       efCon,
+		Checksum:    Checksum,
+		Precision:   precision,
+		Version:     finalVersion,
+		SparseModel: sparseModel,
 	}
 
 	// Marshal JSON using fast streaming encoder
@@ -355,7 +377,7 @@ func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimens
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequest("POST", nd.buildURL("/index/create"), bytes.NewReader(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", nd.buildURL("/index/create"), bytes.NewReader(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -367,18 +389,21 @@ func (nd *Endee) CreateIndexWithContext(ctx context.Context, name string, dimens
 	if err != nil {
 		return err
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	_, err = readResponseBody(resp)
+
 	return err
 }
 
+// ListIndexes retrieves a list of all indexes in the account.
 func (nd *Endee) ListIndexes() ([]IndexInfo, error) {
 	return nd.ListIndexesWithContext(context.Background())
 }
 
-// ListIndexesWithContext lists indexes with context support for cancellation
+// ListIndexesWithContext lists indexes with context support for cancellation.
 func (nd *Endee) ListIndexesWithContext(ctx context.Context) ([]IndexInfo, error) {
-	req, err := http.NewRequest("GET", nd.buildURL("/index/list"), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", nd.buildURL("/index/list"), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -389,20 +414,13 @@ func (nd *Endee) ListIndexesWithContext(ctx context.Context) ([]IndexInfo, error
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("error: %d - %s", resp.StatusCode, resp.Status)
-	}
-
-	// Use buffer pool for reading response
-	buf := getBuffer()
-	defer putBuffer(buf)
-
-	if _, err := buf.ReadFrom(resp.Body); err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+	body, err := readResponseBody(resp)
+	if err != nil {
+		return nil, err
 	}
 
 	var response ListIndexesResponse
-	if err := fastJSONUnmarshal(buf.Bytes(), &response); err != nil {
+	if err := fastJSONUnmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -414,13 +432,14 @@ func (nd *Endee) ListIndexesWithContext(ctx context.Context) ([]IndexInfo, error
 	return response.Indexes, nil
 }
 
+// DeleteIndex deletes the specified index by name.
 func (nd *Endee) DeleteIndex(name string) error {
 	return nd.DeleteIndexWithContext(context.Background(), name)
 }
 
-// DeleteIndexWithContext deletes an index with context support for cancellation
+// DeleteIndexWithContext deletes an index with context support for cancellation.
 func (nd *Endee) DeleteIndexWithContext(ctx context.Context, name string) error {
-	req, err := http.NewRequest("DELETE", nd.buildURL(fmt.Sprintf("/index/%s/delete", name)), nil)
+	req, err := http.NewRequestWithContext(ctx, "DELETE", nd.buildURL(fmt.Sprintf("/index/%s/delete", name)), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -429,12 +448,14 @@ func (nd *Endee) DeleteIndexWithContext(ctx context.Context, name string) error 
 	if err != nil {
 		return err
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	_, err = readResponseBody(resp)
+
 	return err
 }
 
-// GetIndexResponse represents the response from the /index/{name}/info endpoint
+// GetIndexResponse represents the response from the /index/{name}/info endpoint.
 type GetIndexResponse struct {
 	LibToken      string `json:"lib_token"`
 	TotalElements int    `json:"total_elements"`
@@ -445,16 +466,27 @@ type GetIndexResponse struct {
 	EfCon         int    `json:"ef_con"`
 	CreatedAt     int64  `json:"created_at"`
 	Name          string `json:"name"`
-	SparseDim     int    `json:"sparse_dim"`
+	SparseModel   string `json:"sparse_model"`
 }
 
+// SetToken updates the authentication token on the client.
+func (nd *Endee) SetToken(token string) {
+	nd.Token = token
+}
+
+// SetBaseURL updates the base URL on the client.
+func (nd *Endee) SetBaseURL(url string) {
+	nd.BaseURL = url
+}
+
+// GetIndex retrieves an Index object by name for performing operations.
 func (nd *Endee) GetIndex(name string) (*Index, error) {
 	return nd.GetIndexWithContext(context.Background(), name)
 }
 
-// GetIndexWithContext gets an index with context support for cancellation
+// GetIndexWithContext gets an index with context support for cancellation.
 func (nd *Endee) GetIndexWithContext(ctx context.Context, name string) (*Index, error) {
-	req, err := http.NewRequest("GET", nd.buildURL(fmt.Sprintf("/index/%s/info", name)), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", nd.buildURL(fmt.Sprintf("/index/%s/info", name)), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -464,6 +496,7 @@ func (nd *Endee) GetIndexWithContext(ctx context.Context, name string) (*Index, 
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := readResponseBody(resp)
 	if err != nil {
@@ -481,13 +514,15 @@ func (nd *Endee) GetIndexWithContext(ctx context.Context, name string) (*Index, 
 		TotalElements: data.TotalElements,
 		SpaceType:     data.SpaceType,
 		Dimension:     data.Dimension,
-		SparseDim:     data.SparseDim,
+		SparseModel:   data.SparseModel,
 		Precision:     data.Precision,
 		M:             data.M,
 		EfCon:         data.EfCon,
 	}
 
 	// Create and return Index object
-	index := NewIndex(name, nd.Token, nd.BaseUrl, 1, params)
+	index := NewIndex(name, nd.Token, nd.BaseURL, 1, params)
+	index.HTTP = nd.HTTP
+
 	return index, nil
 }
