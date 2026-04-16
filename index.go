@@ -15,35 +15,38 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-// Index represents a Endee index with its properties and configuration
+// Index represents a Endee index with its properties and configuration.
 type Index struct {
-	Name      string
-	Token     string
-	URL       string
-	Version   int
-	Checksum  int
-	LibToken  string
-	Count     int
-	SpaceType string
-	Dimension int
-	SparseDim int
-	Precision string
-	M         int
+	Name        string
+	Token       string
+	URL         string
+	Version     int
+	Checksum    int
+	LibToken    string
+	Count       int
+	SpaceType   string
+	Dimension   int
+	SparseModel string
+	IsHybrid    bool
+	Precision   string
+	M           int
+	EfCon       int
+	HTTP        *http.Client
 }
 
-// IndexParams represents the parameters passed to create an Index
+// IndexParams represents the parameters passed to create an Index.
 type IndexParams struct {
 	LibToken      string `json:"lib_token"`
 	TotalElements int    `json:"total_elements"`
 	SpaceType     string `json:"space_type"`
 	Dimension     int    `json:"dimension"`
-	SparseDim     int    `json:"sparse_dim"`
+	SparseModel   string `json:"sparse_model"`
 	Precision     string `json:"precision"`
 	M             int    `json:"M"`
 	EfCon         int    `json:"ef_con"`
 }
 
-// VectorItem represents a vector with metadata for upserting
+// VectorItem represents a vector with metadata for upserting.
 type VectorItem struct {
 	ID            string                 `json:"id"`
 	Vector        []float32              `json:"vector"`
@@ -53,7 +56,7 @@ type VectorItem struct {
 	Filter        map[string]interface{} `json:"filter,omitempty"`
 }
 
-// VectorObject represents the internal structure for API submission
+// VectorObject represents the internal structure for API submission.
 type VectorObject struct {
 	ID     string    `json:"id"`
 	Meta   string    `json:"meta"`
@@ -62,7 +65,7 @@ type VectorObject struct {
 	Vector []float32 `json:"vector"`
 }
 
-// QueryResult represents a single search result
+// QueryResult represents a single search result.
 type QueryResult struct {
 	ID         string                 `json:"id"`
 	Similarity float32                `json:"similarity"`
@@ -70,39 +73,41 @@ type QueryResult struct {
 	Meta       map[string]interface{} `json:"meta"`
 	Filter     map[string]interface{} `json:"filter,omitempty"`
 	Norm       float32                `json:"norm"`
-	Vector     []float32              `json:"vector,omitempty"`
+	Vector     []float32              `json:"vector"`
 }
 
-// FilterParams represents advanced filtering parameters for HNSW search
+// FilterParams represents advanced filtering parameters for HNSW search.
 type FilterParams struct {
 	BoostPercentage    int `json:"boost_percentage,omitempty"`
 	PrefilterThreshold int `json:"prefilter_threshold,omitempty"`
 }
 
-// FilterUpdateItem represents a single filter update item
+// FilterUpdateItem represents a single filter update item.
 type FilterUpdateItem struct {
 	ID     string                 `json:"id"`
 	Filter map[string]interface{} `json:"filter"`
 }
 
-// FilterUpdateRequest represents the request payload for updating filters
+// FilterUpdateRequest represents the request payload for updating filters.
 type FilterUpdateRequest struct {
 	Updates []FilterUpdateItem `json:"updates"`
 }
 
-// QueryRequest represents the search request payload
+// QueryRequest represents the search request payload.
 type QueryRequest struct {
-	Vector         []float32     `json:"vector,omitempty"`
-	SparseIndices  []int         `json:"sparse_indices,omitempty"`
-	SparseValues   []float32     `json:"sparse_values,omitempty"`
-	TopK           int           `json:"k"`
-	Ef             int           `json:"ef"`
-	IncludeVectors bool          `json:"include_vectors"`
-	Filter         string        `json:"filter,omitempty"`
-	FilterParams   *FilterParams `json:"filter_params,omitempty"`
+	Vector          []float32     `json:"vector,omitempty"`
+	SparseIndices   []int         `json:"sparse_indices,omitempty"`
+	SparseValues    []float32     `json:"sparse_values,omitempty"`
+	TopK            int           `json:"k"`
+	Ef              int           `json:"ef"`
+	IncludeVectors  bool          `json:"include_vectors"`
+	Filter          string        `json:"filter,omitempty"`
+	FilterParams    *FilterParams `json:"filter_params,omitempty"`
+	DenseRRFWeight  float64       `json:"dense_rrf_weight"`
+	RRFRankConstant int           `json:"rrf_rank_constant"`
 }
 
-// NewIndex creates a new Index instance similar to Python's __init__
+// NewIndex creates a new Index instance similar to Python's __init__.
 func NewIndex(name string, token string, url string, version int, params *IndexParams) *Index {
 	if version == 0 {
 		version = 1 // Default version
@@ -128,15 +133,17 @@ func NewIndex(name string, token string, url string, version int, params *IndexP
 		index.Count = params.TotalElements
 		index.SpaceType = params.SpaceType
 		index.Dimension = params.Dimension
-		index.SparseDim = params.SparseDim
+		index.SparseModel = params.SparseModel
+		index.IsHybrid = params.SparseModel != "None"
 		index.Precision = precision
 		index.M = params.M
+		index.EfCon = params.EfCon
 	}
 
 	return index
 }
 
-// buildURL efficiently builds API URLs for index operations
+// buildURL efficiently builds API URLs for index operations.
 func (idx *Index) buildURL(path string) string {
 	var builder strings.Builder
 	builder.Grow(len(idx.URL) + len(path) + len(idx.Name) + 10) // Extra space for /index/ and separator
@@ -147,26 +154,27 @@ func (idx *Index) buildURL(path string) string {
 	if strings.Contains(path, "%s") {
 		// Path contains placeholder for index name
 		return fmt.Sprintf(builder.String()+path, idx.Name)
-	} else {
-		// Simple concatenation
-		builder.WriteString(path)
-		return builder.String()
 	}
+
+	// Simple concatenation
+	builder.WriteString(path)
+
+	return builder.String()
 }
 
-// executeRequest executes HTTP requests with consistent headers and error handling
+// executeRequest executes HTTP requests with consistent headers and error handling.
 func (idx *Index) executeRequest(method, path string, body []byte, contentType string) (*http.Response, error) {
 	return idx.executeRequestWithContext(context.Background(), method, path, body, contentType)
 }
 
-// executeRequestWithContext executes HTTP requests with context support
+// executeRequestWithContext executes HTTP requests with context support.
 func (idx *Index) executeRequestWithContext(ctx context.Context, method, path string, body []byte, contentType string) (*http.Response, error) {
 	var reqBody io.Reader
 	if body != nil {
 		reqBody = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequest(method, idx.buildURL(path), reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, idx.buildURL(path), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -177,7 +185,10 @@ func (idx *Index) executeRequestWithContext(ctx context.Context, method, path st
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	client := &http.Client{}
+	client := idx.HTTP
+	if client == nil {
+		client = http.DefaultClient
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
@@ -186,7 +197,7 @@ func (idx *Index) executeRequestWithContext(ctx context.Context, method, path st
 	return resp, nil
 }
 
-// normalizeVector normalizes a vector for cosine similarity if needed
+// normalizeVector normalizes a vector for cosine similarity if needed.
 func (idx *Index) normalizeVector(vector []float32) ([]float32, float32, error) {
 	// Check dimension of the vector
 	if len(vector) != idx.Dimension {
@@ -220,12 +231,12 @@ func (idx *Index) normalizeVector(vector []float32) ([]float32, float32, error) 
 	return normalizedVector, norm, nil
 }
 
-// Upsert inserts or updates vectors in the index
+// Upsert inserts or updates vectors in the index.
 func (idx *Index) Upsert(inputArray []VectorItem) error {
 	return idx.UpsertWithContext(context.Background(), inputArray)
 }
 
-// UpsertWithContext inserts or updates vectors with context support and concurrent processing
+// UpsertWithContext inserts or updates vectors with context support and concurrent processing.
 func (idx *Index) UpsertWithContext(ctx context.Context, inputArray []VectorItem) error {
 	if len(inputArray) > MaxVectorsPerBatch {
 		return fmt.Errorf("cannot insert more than %d vectors at a time", MaxVectorsPerBatch)
@@ -235,10 +246,26 @@ func (idx *Index) UpsertWithContext(ctx context.Context, inputArray []VectorItem
 		return nil
 	}
 
+	// Check for duplicate IDs
+	seenIDs := make(map[string]struct{}, len(inputArray))
+	for _, item := range inputArray {
+		if _, exists := seenIDs[item.ID]; exists {
+			return fmt.Errorf("duplicate id found in batch: %s", item.ID)
+		}
+		seenIDs[item.ID] = struct{}{}
+	}
+
 	// Validate each vector item
 	for i, item := range inputArray {
 		if strings.TrimSpace(item.ID) == "" {
 			return fmt.Errorf("id must not be empty (item index %d)", i)
+		}
+
+		// Check for NaN / Inf in vector values
+		for j, v := range item.Vector {
+			if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+				return fmt.Errorf("vector contains invalid value (NaN or Inf) at index %d (item id: %s)", j, item.ID)
+			}
 		}
 
 		// Sparse data validation: both must be present or both nil/empty
@@ -252,6 +279,14 @@ func (idx *Index) UpsertWithContext(ctx context.Context, inputArray []VectorItem
 		if hasIndices && len(item.SparseIndices) != len(item.SparseValues) {
 			return fmt.Errorf("sparse_indices and sparse_values must have the same length (item id: %s)", item.ID)
 		}
+
+		// Hybrid enforcement
+		if idx.IsHybrid && (!hasIndices || !hasValues) {
+			return fmt.Errorf("hybrid index requires sparse_indices and sparse_values for every item (item id: %s)", item.ID)
+		}
+		if !idx.IsHybrid && (hasIndices || hasValues) {
+			return fmt.Errorf("sparse_indices and sparse_values cannot be used on a non-hybrid index (item id: %s)", item.ID)
+		}
 	}
 
 	// For small batches, use sequential processing
@@ -263,7 +298,7 @@ func (idx *Index) UpsertWithContext(ctx context.Context, inputArray []VectorItem
 	return idx.upsertConcurrent(ctx, inputArray)
 }
 
-// upsertSequential processes vectors sequentially for small batches
+// upsertSequential processes vectors sequentially for small batches.
 func (idx *Index) upsertSequential(ctx context.Context, inputArray []VectorItem) error {
 	// Pre-allocate slice with known capacity
 	vectorBatch := make([][]interface{}, 0, len(inputArray))
@@ -275,8 +310,8 @@ func (idx *Index) upsertSequential(ctx context.Context, inputArray []VectorItem)
 			return err
 		}
 
-		// Serialize metadata using JsonZip (zlib compressed)
-		metaBytes, err := JsonZip(item.Meta)
+		// Serialize metadata using JSONZip (zlib compressed)
+		metaBytes, err := JSONZip(item.Meta)
 		if err != nil {
 			return fmt.Errorf("failed to compress metadata: %v", err)
 		}
@@ -326,7 +361,7 @@ func (idx *Index) upsertSequential(ctx context.Context, inputArray []VectorItem)
 	return nil
 }
 
-// upsertConcurrent processes vectors concurrently for large batches
+// upsertConcurrent processes vectors concurrently for large batches.
 func (idx *Index) upsertConcurrent(ctx context.Context, inputArray []VectorItem) error {
 	// Determine optimal batch size and worker count
 	numWorkers := runtime.NumCPU()
@@ -396,23 +431,24 @@ func (idx *Index) upsertConcurrent(ctx context.Context, inputArray []VectorItem)
 	return nil
 }
 
-// String implements the fmt.Stringer interface, equivalent to Python's __str__
-func (i *Index) String() string {
-	return i.Name
+// String implements the fmt.Stringer interface, equivalent to Python's __str__.
+func (idx *Index) String() string {
+	return idx.Name
 }
 
-// GetInfo returns a formatted string with index information for debugging
-func (i *Index) GetInfo() string {
-	return fmt.Sprintf("Index{Name: %s, Dimension: %d, SparseDim: %d, SpaceType: %s, Count: %d, Precision: %s, M: %d}",
-		i.Name, i.Dimension, i.SparseDim, i.SpaceType, i.Count, i.Precision, i.M)
+// GetInfo returns a formatted string with index information for debugging.
+func (idx *Index) GetInfo() string {
+	return fmt.Sprintf("Index{Name: %s, Dimension: %d, SparseModel: %s, IsHybrid: %v, SpaceType: %s, Count: %d, Precision: %s, M: %d, EfCon: %d}",
+		idx.Name, idx.Dimension, idx.SparseModel, idx.IsHybrid, idx.SpaceType, idx.Count, idx.Precision, idx.M, idx.EfCon)
 }
 
-func (i *Index) Query(vector []float32, sparseIndices []int, sparseValues []float32, k int, filter map[string]interface{}, ef int, includeVectors bool, filterParams *FilterParams) ([]QueryResult, error) {
-	return i.QueryWithContext(context.Background(), vector, sparseIndices, sparseValues, k, filter, ef, includeVectors, filterParams)
+// Query performs a vector similarity search on the index.
+func (idx *Index) Query(vector []float32, sparseIndices []int, sparseValues []float32, k int, filter map[string]interface{}, ef int, includeVectors bool, filterParams *FilterParams, denseRRFWeight float64, rrfRankConstant int) ([]QueryResult, error) {
+	return idx.QueryWithContext(context.Background(), vector, sparseIndices, sparseValues, k, filter, ef, includeVectors, filterParams, denseRRFWeight, rrfRankConstant)
 }
 
-// QueryWithContext performs vector similarity search with context support
-func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIndices []int, sparseValues []float32, k int, filter map[string]interface{}, ef int, includeVectors bool, filterParams *FilterParams) ([]QueryResult, error) {
+// QueryWithContext performs vector similarity search with context support.
+func (idx *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIndices []int, sparseValues []float32, k int, filter map[string]interface{}, ef int, includeVectors bool, filterParams *FilterParams, denseRRFWeight float64, rrfRankConstant int) ([]QueryResult, error) {
 	// Validate parameters
 	if k <= 0 || k > MaxTopKAllowed {
 		return nil, fmt.Errorf("top_k must be between 1 and %d", MaxTopKAllowed)
@@ -439,10 +475,15 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 		return nil, fmt.Errorf("sparse_indices and sparse_values must have the same length")
 	}
 
+	// Enforce hybrid constraints: sparse fields forbidden on non-hybrid index
+	if !idx.IsHybrid && (hasSparseIndices || hasSparseValues) {
+		return nil, fmt.Errorf("sparse_indices and sparse_values cannot be used on a non-hybrid index")
+	}
+
 	// Validate filter parameters if provided
 	if filterParams != nil {
-		if filterParams.BoostPercentage < 0 || filterParams.BoostPercentage > 100 {
-			return nil, fmt.Errorf("filter_boost_percentage must be between 0 and 100")
+		if filterParams.BoostPercentage < 0 || filterParams.BoostPercentage > 400 {
+			return nil, fmt.Errorf("filter_boost_percentage must be between 0 and 400")
 		}
 		if filterParams.PrefilterThreshold != 0 &&
 			(filterParams.PrefilterThreshold < 1000 || filterParams.PrefilterThreshold > 1000000) {
@@ -450,8 +491,24 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 		}
 	}
 
+	// Apply defaults for RRF params if zero
+	if denseRRFWeight == 0 {
+		denseRRFWeight = DefaultDenseRRFWeight
+	}
+	if rrfRankConstant == 0 {
+		rrfRankConstant = DefaultRRFRankConstant
+	}
+
+	// Validate RRF params
+	if denseRRFWeight < 0.0 || denseRRFWeight > 1.0 {
+		return nil, fmt.Errorf("dense_rrf_weight must be between 0.0 and 1.0")
+	}
+	if rrfRankConstant < 1 {
+		return nil, fmt.Errorf("rrf_rank_constant must be at least 1")
+	}
+
 	// Normalize query vector
-	normalizedVector, norm, err := i.normalizeVector(vector)
+	normalizedVector, norm, err := idx.normalizeVector(vector)
 	if err != nil {
 		return nil, err
 	}
@@ -459,13 +516,15 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 
 	// Prepare search request
 	requestData := QueryRequest{
-		Vector:         normalizedVector,
-		SparseIndices:  sparseIndices,
-		SparseValues:   sparseValues,
-		TopK:           k,
-		Ef:             ef,
-		IncludeVectors: includeVectors,
-		FilterParams:   filterParams,
+		Vector:          normalizedVector,
+		SparseIndices:   sparseIndices,
+		SparseValues:    sparseValues,
+		TopK:            k,
+		Ef:              ef,
+		IncludeVectors:  includeVectors,
+		FilterParams:    filterParams,
+		DenseRRFWeight:  denseRRFWeight,
+		RRFRankConstant: rrfRankConstant,
 	}
 
 	// Add filter if provided
@@ -484,7 +543,7 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 	}
 
 	// Execute request using helper method with context
-	resp, err := i.executeRequestWithContext(ctx, "POST", "index/%s/search", jsonData, "application/json")
+	resp, err := idx.executeRequestWithContext(ctx, "POST", "index/%s/search", jsonData, "application/json")
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +574,7 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 
 	// For large result sets, use concurrent processing
 	if len(results) > 50 {
-		return i.processResultsConcurrent(ctx, results, includeVectors)
+		return idx.processResultsConcurrent(ctx, results, includeVectors)
 	}
 
 	// Sequential processing for smaller result sets
@@ -561,7 +620,7 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 		// Parse metadata (placeholder for json_unzip equivalent)
 		// Parse metadata (unzip)
 		if len(metaDataBytes) > 0 {
-			if meta, err := JsonUnzip(metaDataBytes); err == nil {
+			if meta, err := JSONUnzip(metaDataBytes); err == nil {
 				processed.Meta = meta
 			}
 		}
@@ -577,16 +636,11 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 		// Handle vectors
 		if includeVectors && len(vectorData) > 0 {
 			processed.Vector = vectorData
+		} else {
+			processed.Vector = []float32{}
 		}
 
 		processedResults = append(processedResults, processed)
-	}
-
-	// Remove vectors if not requested
-	if !includeVectors {
-		for i := range processedResults {
-			processedResults[i].Vector = nil
-		}
 	}
 
 	// Use variables to avoid unused variable errors
@@ -596,8 +650,8 @@ func (i *Index) QueryWithContext(ctx context.Context, vector []float32, sparseIn
 	return processedResults, nil
 }
 
-// processResultsConcurrent processes query results concurrently for large result sets
-func (i *Index) processResultsConcurrent(ctx context.Context, results [][]interface{}, includeVectors bool) ([]QueryResult, error) {
+// processResultsConcurrent processes query results concurrently for large result sets.
+func (idx *Index) processResultsConcurrent(ctx context.Context, results [][]interface{}, includeVectors bool) ([]QueryResult, error) {
 	numWorkers := runtime.NumCPU()
 	if len(results) < numWorkers*2 {
 		numWorkers = (len(results) + 1) / 2
@@ -623,7 +677,7 @@ func (i *Index) processResultsConcurrent(ctx context.Context, results [][]interf
 		go func() {
 			defer wg.Done()
 			for work := range workChan {
-				processed, err := i.processResult(work.result, includeVectors)
+				processed, err := idx.processResult(work.result, includeVectors)
 				resultChan <- struct {
 					index int
 					data  QueryResult
@@ -663,8 +717,8 @@ func (i *Index) processResultsConcurrent(ctx context.Context, results [][]interf
 	return processedResults, nil
 }
 
-// processResult processes a single query result
-func (i *Index) processResult(result []interface{}, includeVectors bool) (QueryResult, error) {
+// processResult processes a single query result.
+func (idx *Index) processResult(result []interface{}, includeVectors bool) (QueryResult, error) {
 	if len(result) < 5 {
 		return QueryResult{}, fmt.Errorf("invalid result format: expected at least 5 elements, got %d", len(result))
 	}
@@ -693,7 +747,7 @@ func (i *Index) processResult(result []interface{}, includeVectors bool) (QueryR
 
 	// Parse metadata (unzip)
 	if len(metaDataBytes) > 0 {
-		if meta, err := JsonUnzip(metaDataBytes); err == nil {
+		if meta, err := JSONUnzip(metaDataBytes); err == nil {
 			processed.Meta = meta
 		}
 	}
@@ -711,31 +765,27 @@ func (i *Index) processResult(result []interface{}, includeVectors bool) (QueryR
 	// Handle vectors
 	if includeVectors && len(result) > 5 && result[5] != nil {
 		vectorInterface := result[5].([]interface{})
-		// Direct allocation instead of pooling
 		vectorData := make([]float32, len(vectorInterface))
-
-		// Convert with type safety
 		for j, v := range vectorInterface {
 			vectorData[j] = toFloat32(v)
 		}
-
-		if includeVectors {
-			processed.Vector = vectorData
-		}
+		processed.Vector = vectorData
+	} else {
+		processed.Vector = []float32{}
 	}
 
 	return processed, nil
 }
 
-// DeleteVectorById deletes a vector by ID from the index
-func (i *Index) DeleteVectorById(id string) (string, error) {
-	return i.DeleteVectorByIdWithContext(context.Background(), id)
+// DeleteVectorByID deletes a vector by ID from the index.
+func (idx *Index) DeleteVectorByID(id string) (string, error) {
+	return idx.DeleteVectorByIDWithContext(context.Background(), id)
 }
 
-// DeleteVectorByIdWithContext deletes a vector by ID with context support
-func (i *Index) DeleteVectorByIdWithContext(ctx context.Context, id string) (string, error) {
+// DeleteVectorByIDWithContext deletes a vector by ID with context support.
+func (idx *Index) DeleteVectorByIDWithContext(ctx context.Context, id string) (string, error) {
 	// Execute request using helper method with context
-	resp, err := i.executeRequestWithContext(ctx, "DELETE", fmt.Sprintf("index/%s/vector/%s/delete", i.Name, id), nil, "")
+	resp, err := idx.executeRequestWithContext(ctx, "DELETE", fmt.Sprintf("index/%s/vector/%s/delete", idx.Name, id), nil, "")
 	if err != nil {
 		return "", err
 	}
@@ -753,16 +803,16 @@ func (i *Index) DeleteVectorByIdWithContext(ctx context.Context, id string) (str
 		return "", err
 	}
 
-	return buf.String(), nil
+	return buf.String() + " rows deleted", nil
 }
 
-// DeleteVectorByFilter deletes vectors matching a specific filter from the index
-func (i *Index) DeleteVectorByFilter(filter map[string]interface{}) (string, error) {
-	return i.DeleteVectorByFilterWithContext(context.Background(), filter)
+// DeleteVectorByFilter deletes vectors matching a specific filter from the index.
+func (idx *Index) DeleteVectorByFilter(filter map[string]interface{}) (string, error) {
+	return idx.DeleteVectorByFilterWithContext(context.Background(), filter)
 }
 
-// DeleteVectorByFilterWithContext deletes vectors matching a filter with context support
-func (i *Index) DeleteVectorByFilterWithContext(ctx context.Context, filter map[string]interface{}) (string, error) {
+// DeleteVectorByFilterWithContext deletes vectors matching a filter with context support.
+func (idx *Index) DeleteVectorByFilterWithContext(ctx context.Context, filter map[string]interface{}) (string, error) {
 	if filter == nil {
 		return "", fmt.Errorf("filter cannot be nil")
 	}
@@ -778,7 +828,7 @@ func (i *Index) DeleteVectorByFilterWithContext(ctx context.Context, filter map[
 	}
 
 	// Execute request using helper method with context
-	resp, err := i.executeRequestWithContext(ctx, "DELETE", fmt.Sprintf("index/%s/vectors/delete", i.Name), jsonData, "application/json")
+	resp, err := idx.executeRequestWithContext(ctx, "DELETE", fmt.Sprintf("index/%s/vectors/delete", idx.Name), jsonData, "application/json")
 	if err != nil {
 		return "", err
 	}
@@ -799,32 +849,33 @@ func (i *Index) DeleteVectorByFilterWithContext(ctx context.Context, filter map[
 	return buf.String(), nil
 }
 
-// DeleteHybridVectorById deletes a hybrid vector by ID from the index
-func (i *Index) DeleteHybridVectorById(id string) (string, error) {
-	return i.DeleteVectorById(id)
+// DeleteHybridVectorByID deletes a hybrid vector by ID from the index.
+func (idx *Index) DeleteHybridVectorByID(id string) (string, error) {
+	return idx.DeleteVectorByID(id)
 }
 
-// DeleteHybridVectorByIdWithContext deletes a hybrid vector by ID with context support
-func (i *Index) DeleteHybridVectorByIdWithContext(ctx context.Context, id string) (string, error) {
-	return i.DeleteVectorByIdWithContext(ctx, id)
+// DeleteHybridVectorByIDWithContext deletes a hybrid vector by ID with context support.
+func (idx *Index) DeleteHybridVectorByIDWithContext(ctx context.Context, id string) (string, error) {
+	return idx.DeleteVectorByIDWithContext(ctx, id)
 }
 
-// DeleteHybridVectorByFilter deletes hybrid vectors matching a specific filter from the index
-func (i *Index) DeleteHybridVectorByFilter(filter map[string]interface{}) (string, error) {
-	return i.DeleteVectorByFilter(filter)
+// DeleteHybridVectorByFilter deletes hybrid vectors matching a specific filter from the index.
+func (idx *Index) DeleteHybridVectorByFilter(filter map[string]interface{}) (string, error) {
+	return idx.DeleteVectorByFilter(filter)
 }
 
-// DeleteHybridVectorByFilterWithContext deletes hybrid vectors matching a filter with context support
-func (i *Index) DeleteHybridVectorByFilterWithContext(ctx context.Context, filter map[string]interface{}) (string, error) {
-	return i.DeleteVectorByFilterWithContext(ctx, filter)
+// DeleteHybridVectorByFilterWithContext deletes hybrid vectors matching a filter with context support.
+func (idx *Index) DeleteHybridVectorByFilterWithContext(ctx context.Context, filter map[string]interface{}) (string, error) {
+	return idx.DeleteVectorByFilterWithContext(ctx, filter)
 }
 
-func (i *Index) GetVector(id string) (VectorItem, error) {
-	return i.GetVectorWithContext(context.Background(), id)
+// GetVector retrieves a vector by ID from the index.
+func (idx *Index) GetVector(id string) (VectorItem, error) {
+	return idx.GetVectorWithContext(context.Background(), id)
 }
 
-// GetVectorWithContext retrieves a vector by ID with context support
-func (i *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem, error) {
+// GetVectorWithContext retrieves a vector by ID with context support.
+func (idx *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem, error) {
 	// Prepare request body with the vector ID using fast JSON
 	requestData := map[string]string{"id": id}
 	jsonData, err := fastJSONMarshal(requestData)
@@ -833,7 +884,7 @@ func (i *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem
 	}
 
 	// Execute request using helper method with context
-	resp, err := i.executeRequestWithContext(ctx, "POST", "index/%s/vector/get", jsonData, "application/json")
+	resp, err := idx.executeRequestWithContext(ctx, "POST", "index/%s/vector/get", jsonData, "application/json")
 	if err != nil {
 		return VectorItem{}, err
 	}
@@ -912,10 +963,10 @@ func (i *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem
 		vector[j] = toFloat32(v)
 	}
 
-	// Parse metadata using JsonUnzip
+	// Parse metadata using JSONUnzip
 	var meta map[string]interface{}
 	if len(metaDataBytes) > 0 {
-		if m, err := JsonUnzip(metaDataBytes); err == nil {
+		if m, err := JSONUnzip(metaDataBytes); err == nil {
 			meta = m
 		} else {
 			meta = make(map[string]interface{})
@@ -951,12 +1002,13 @@ func (i *Index) GetVectorWithContext(ctx context.Context, id string) (VectorItem
 	}, nil
 }
 
-// UpdateFilters updates filters for multiple vectors by ID
-func (i *Index) UpdateFilters(updates []FilterUpdateItem) (string, error) {
-	return i.UpdateFiltersWithContext(context.Background(), updates)
+// UpdateFilters updates filters for multiple vectors by ID.
+func (idx *Index) UpdateFilters(updates []FilterUpdateItem) (string, error) {
+	return idx.UpdateFiltersWithContext(context.Background(), updates)
 }
 
-func (i *Index) UpdateFiltersWithContext(ctx context.Context, updates []FilterUpdateItem) (string, error) {
+// UpdateFiltersWithContext updates vector filter metadata with context support.
+func (idx *Index) UpdateFiltersWithContext(ctx context.Context, updates []FilterUpdateItem) (string, error) {
 	// Validate updates
 	if len(updates) == 0 {
 		return "", fmt.Errorf("updates cannot be empty")
@@ -982,7 +1034,7 @@ func (i *Index) UpdateFiltersWithContext(ctx context.Context, updates []FilterUp
 	}
 
 	// Execute request using helper method with context
-	resp, err := i.executeRequestWithContext(ctx, "POST", fmt.Sprintf("index/%s/filters/update", i.Name), jsonData, "application/json")
+	resp, err := idx.executeRequestWithContext(ctx, "POST", fmt.Sprintf("index/%s/filters/update", idx.Name), jsonData, "application/json")
 	if err != nil {
 		return "", err
 	}
@@ -1003,7 +1055,167 @@ func (i *Index) UpdateFiltersWithContext(ctx context.Context, updates []FilterUp
 	return buf.String(), nil
 }
 
-// safeStringConvert safely converts interface{} to string, handling both string and []uint8 cases
+// Describe returns a map of the index's stored configuration fields without making an HTTP call.
+func (idx *Index) Describe() map[string]interface{} {
+	return map[string]interface{}{
+		"name":        idx.Name,
+		"space_type":  idx.SpaceType,
+		"dimension":   idx.Dimension,
+		"sparse_model": idx.SparseModel,
+		"is_hybrid":   idx.IsHybrid,
+		"count":       idx.Count,
+		"precision":   idx.Precision,
+		"M":           idx.M,
+		"ef_con":      idx.EfCon,
+	}
+}
+
+// RefreshMetadata re-fetches index metadata from the server and updates the Index fields.
+func (idx *Index) RefreshMetadata() (map[string]interface{}, error) {
+	return idx.RefreshMetadataWithContext(context.Background())
+}
+
+// RefreshMetadataWithContext re-fetches index metadata with context support.
+func (idx *Index) RefreshMetadataWithContext(ctx context.Context) (map[string]interface{}, error) {
+	resp, err := idx.executeRequestWithContext(ctx, "GET", "index/%s/info", nil, "application/json")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := readResponseBody(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	var data GetIndexResponse
+	if err := fastJSONUnmarshal(body, &data); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Update fields
+	idx.Count = data.TotalElements
+	idx.SpaceType = data.SpaceType
+	idx.Dimension = data.Dimension
+	idx.Precision = data.Precision
+	idx.M = data.M
+	idx.EfCon = data.EfCon
+	idx.SparseModel = data.SparseModel
+	idx.LibToken = data.LibToken
+	idx.IsHybrid = data.SparseModel != "None"
+
+	return map[string]interface{}{
+		"name":         idx.Name,
+		"space_type":   idx.SpaceType,
+		"dimension":    idx.Dimension,
+		"sparse_model": idx.SparseModel,
+		"is_hybrid":    idx.IsHybrid,
+		"count":        idx.Count,
+		"precision":    idx.Precision,
+		"M":            idx.M,
+		"ef_con":       idx.EfCon,
+	}, nil
+}
+
+// RebuildRequest represents the request payload for rebuilding an index.
+type RebuildRequest struct {
+	M     int `json:"M,omitempty"`
+	EfCon int `json:"ef_con,omitempty"`
+}
+
+// Rebuild triggers a rebuild of the HNSW index with optional new M and ef_con parameters.
+func (idx *Index) Rebuild(m, efCon *int) (map[string]interface{}, error) {
+	return idx.RebuildWithContext(context.Background(), m, efCon)
+}
+
+// RebuildWithContext triggers a rebuild with context support.
+func (idx *Index) RebuildWithContext(ctx context.Context, m, efCon *int) (map[string]interface{}, error) {
+	// Refresh metadata first; error if index is empty
+	if _, err := idx.RefreshMetadataWithContext(ctx); err != nil {
+		return nil, fmt.Errorf("failed to refresh metadata before rebuild: %w", err)
+	}
+	if idx.Count == 0 {
+		return nil, fmt.Errorf("cannot rebuild an empty index")
+	}
+
+	reqBody := RebuildRequest{}
+	if m != nil {
+		reqBody.M = *m
+	}
+	if efCon != nil {
+		reqBody.EfCon = *efCon
+	}
+
+	jsonData, err := fastJSONMarshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request data: %w", err)
+	}
+
+	resp, err := idx.executeRequestWithContext(ctx, "POST", "index/%s/rebuild", jsonData, "application/json")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	buf := getBuffer()
+	defer putBuffer(buf)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Rebuild returns 202 Accepted
+	if resp.StatusCode != 202 {
+		if err := checkError(resp); err != nil {
+			return nil, err
+		}
+	}
+
+	bodyBytes := make([]byte, buf.Len())
+	copy(bodyBytes, buf.Bytes())
+
+	var result map[string]interface{}
+	if err := fastJSONUnmarshal(bodyBytes, &result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result, nil
+}
+
+// RebuildStatus returns the current status of a rebuild operation.
+func (idx *Index) RebuildStatus() (map[string]interface{}, error) {
+	return idx.RebuildStatusWithContext(context.Background())
+}
+
+// RebuildStatusWithContext returns rebuild status with context support.
+func (idx *Index) RebuildStatusWithContext(ctx context.Context) (map[string]interface{}, error) {
+	resp, err := idx.executeRequestWithContext(ctx, "GET", "index/%s/rebuild/status", nil, "")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	buf := getBuffer()
+	defer putBuffer(buf)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if err := checkError(resp); err != nil {
+		return nil, err
+	}
+
+	bodyBytes := make([]byte, buf.Len())
+	copy(bodyBytes, buf.Bytes())
+
+	var result map[string]interface{}
+	if err := fastJSONUnmarshal(bodyBytes, &result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result, nil
+}
+
+// safeStringConvert safely converts interface{} to string, handling both string and []uint8 cases.
 func safeStringConvert(val interface{}) string {
 	if val == nil {
 		return ""
@@ -1018,7 +1230,7 @@ func safeStringConvert(val interface{}) string {
 	}
 }
 
-// toFloat32 safely converts an interface{} to float32
+// toFloat32 safely converts an interface{} to float32.
 func toFloat32(val interface{}) float32 {
 	if val == nil {
 		return 0.0

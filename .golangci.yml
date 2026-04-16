@@ -1,13 +1,38 @@
 version: "2"
 
+run:
+  timeout: 5m
+
 linters:
-  default: standard
-  exclusions:
+  enable:
+    - bodyclose
+    - gocritic
+    - godot
+    - noctx
+    - nlreturn
+    - wrapcheck
+  disable:
+    - unused
+
+linters-settings:
+  revive:
     rules:
-      - linters:
-          - staticcheck
-        text: "ST1005"
-      - linters:
-          - unused
-        path: index\.go
-        text: "executeRequest"
+      - name: exported
+        disabled: false
+      - name: package-comments
+        disabled: false
+
+issues:
+  exclude:
+    - "stutters"
+    - "executeRequest is unused"
+  exclude-rules:
+    - linters:
+        - staticcheck
+      text: "ST1005"
+
+    # fastJSONMarshal/fastJSONUnmarshal are internal helpers; callers add context to errors.
+    - linters:
+        - wrapcheck
+      path: client\.go
+      text: "error returned from external package is unwrapped"
