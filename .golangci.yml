@@ -13,26 +13,23 @@ linters:
     - wrapcheck
   disable:
     - unused
-
-linters-settings:
-  revive:
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+        - name: package-comments
+          disabled: false
+  exclusions:
     rules:
-      - name: exported
-        disabled: false
-      - name: package-comments
-        disabled: false
+      - text: "stutters"
+      - text: "executeRequest is unused"
+      - linters:
+          - staticcheck
+        text: "ST1005"
 
-issues:
-  exclude:
-    - "stutters"
-    - "executeRequest is unused"
-  exclude-rules:
-    - linters:
-        - staticcheck
-      text: "ST1005"
-
-    # fastJSONMarshal/fastJSONUnmarshal are internal helpers; callers add context to errors.
-    - linters:
-        - wrapcheck
-      path: client\.go
-      text: "error returned from external package is unwrapped"
+      # fastJSONMarshal/fastJSONUnmarshal are internal helpers; callers add context to errors.
+      - linters:
+          - wrapcheck
+        path: client\.go
+        text: "error returned from external package is unwrapped"
