@@ -23,7 +23,11 @@ linters:
   exclusions:
     rules:
       - text: "stutters"
+        linters:
+          - revive
       - text: "executeRequest is unused"
+        linters:
+          - unused
       - linters:
           - staticcheck
         text: "ST1005"
