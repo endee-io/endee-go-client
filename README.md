@@ -5,7 +5,7 @@ Endee is a high-performance vector database designed for speed and efficiency. T
 ## Key Features
 
 - **Fast ANN Searches**: Efficient similarity searches on vector data using HNSW algorithm
-- **Hybrid Search**: Combine dense and sparse vectors for powerful semantic + keyword search
+- **Hybrid Search**: Combine dense and sparse vectors for powerful semantic + keyword search using Reciprocal Rank Fusion (RRF)
 - **Multiple Distance Metrics**: Support for cosine, L2, and inner product distance metrics
 - **Metadata Support**: Attach and search with metadata and filters
 - **Advanced Filtering**: Powerful query filtering with operators like `$eq`, `$in`, and `$range`
@@ -45,16 +45,16 @@ func main() {
     }
     fmt.Printf("Found %d indexes\n", len(indexes))
     
-    // Create a new index
+    // Create a new dense index
     err = client.CreateIndex(
-        "my_vectors",     // name
-        768,             // dimension
-        "cosine",         // space_type (cosine, l2, ip)
-        16,               // M - HNSW connectivity parameter
-        128,              // ef_con - construction parameter
-        endee.PrecisionFloat32, // precision (float32, float16, int16, int8, binary)
-        nil,              // version (optional)
-        0,                // sparse_dim (optional, 0 for dense-only)
+        "my_vectors",            // name
+        768,                     // dimension
+        "cosine",                // space_type (cosine, l2, ip)
+        16,                      // M - HNSW connectivity parameter
+        128,                     // ef_con - construction parameter
+        endee.PrecisionFloat32,  // precision (float32, float16, int16, int8, binary)
+        nil,                     // version (optional)
+        "",                      // sparseModel ("" for dense-only, "default" or "endee_bm25" for hybrid)
     )
     if err != nil {
         log.Fatal(err)
@@ -95,7 +95,7 @@ func main() {
         },
     }
     
-    results, err := index.Query(queryVector, nil, nil, 10, filter, 128, false, nil)
+    results, err := index.Query(queryVector, nil, nil, 10, filter, 128, false, nil, 0.5, 60)
     if err != nil {
         log.Fatal(err)
     }
@@ -114,7 +114,7 @@ To interact with the Endee platform, you'll need to authenticate using an API to
 
 Not using a token at any development stage will result in open APIs and vectors.
 
-### 🔐 Generate Your API Token
+### Generate Your API Token
 
 - Each token is tied to your workspace and should be kept private
 - Once you have your token, you're ready to initialize the client and begin using the SDK
@@ -141,7 +141,7 @@ The Endee client allows for setting custom domain URL and port changes (default 
 client := endee.EndeeClient("your-token-here")
 
 // Manually set base URL if needed
-client.BaseUrl = "http://0.0.0.0:8081/api/v1"
+client.BaseURL = "http://0.0.0.0:8081/api/v1"
 ```
 
 ### Listing All Indexes
@@ -164,37 +164,49 @@ for i, idx := range indexes {
 
 ### Create an Index
 
-The `client.CreateIndex()` method initializes a new vector index with customizable parameters such as dimensionality, distance metric, graph construction settings, and precision level. These configurations determine how the index stores and retrieves high-dimensional vector data.
+The `client.CreateIndex()` method initializes a new vector index with customizable parameters such as dimensionality, distance metric, graph construction settings, and precision level.
 
 ```go
 client := endee.EndeeClient("your-token-here")
 
-// Create an index with custom parameters
+// Create a dense index
 err := client.CreateIndex(
-    "my_custom_index",  // name
-    768,                // dimension
-    "cosine",           // space_type
-    16,                 // M (graph connectivity, default = 16)
-    128,                // ef_con (construction parameter, default = 128)
-    endee.PrecisionFloat32, // precision
-    nil,                // version (optional)
-    0,                  // sparse_dim (optional, 0 for dense-only)
+    "my_custom_index",       // name
+    768,                     // dimension
+    "cosine",                // space_type
+    16,                      // M (graph connectivity, default = 16)
+    128,                     // ef_con (construction parameter, default = 128)
+    endee.PrecisionFloat32,  // precision
+    nil,                     // version (optional)
+    "",                      // sparseModel ("" for dense-only)
 )
 if err != nil {
     log.Fatal(err)
 }
+
+// Create a hybrid (dense + sparse) index
+err = client.CreateIndex(
+    "my_hybrid_index",
+    768,
+    "cosine",
+    16,
+    128,
+    endee.PrecisionFloat32,
+    nil,
+    endee.SparseModelDefault, // or endee.SparseModelEndEeBM25
+)
 ```
 
 **Parameters:**
 
 - `name`: Unique name for your index (alphanumeric + underscores, max 48 chars)
-- `dimension`: Vector dimensionality (must match your embedding model's output, max 10000)
+- `dimension`: Vector dimensionality (must match your embedding model's output, max 8000)
 - `spaceType`: Distance metric - `"cosine"`, `"l2"`, or `"ip"` (inner product)
 - `M`: HNSW graph connectivity parameter - higher values increase recall but use more memory (default: 16)
 - `efCon`: HNSW construction parameter - higher values improve index quality but slow down indexing (default: 128)
 - `precision`: Support for multiple precision levels - `PrecisionFloat32`, `PrecisionFloat16`, `PrecisionInt16`, `PrecisionInt8`, `PrecisionBinary`
 - `version`: Optional version parameter for index versioning
-- `sparseDim`: Dimension for sparse vectors (0 for dense-only)
+- `sparseModel`: Sparse model for hybrid search (`""` for dense-only, `"default"` or `"endee_bm25"` for hybrid)
 
 **Precision Levels:**
 
@@ -208,16 +220,12 @@ The Go client supports various precision levels for memory/accuracy tradeoffs:
 | INT8 | `PrecisionInt8` | 8-bit int | ~75% less | Maximum memory savings |
 | Binary | `PrecisionBinary` | 1-bit | Minimum | Fast, low-memory keyword-like search |
 
-**Example with different precision levels:**
-
 ```go
-client := endee.EndeeClient("your-token-here")
-
 // High accuracy index (FP32)
-err := client.CreateIndex("high_accuracy_index", 768, "cosine", 16, 128, endee.PrecisionFloat32, nil, 0)
+err := client.CreateIndex("high_accuracy_index", 768, "cosine", 16, 128, endee.PrecisionFloat32, nil, "")
 
 // Memory-optimized index (INT8)
-err = client.CreateIndex("low_memory_index", 768, "cosine", 16, 128, endee.PrecisionInt8, nil, 0)
+err = client.CreateIndex("low_memory_index", 768, "cosine", 16, 128, endee.PrecisionInt8, nil, "")
 ```
 
 ### Get an Index
@@ -227,36 +235,24 @@ The `client.GetIndex()` method retrieves a reference to an existing index. This 
 ```go
 client := endee.EndeeClient("your-token-here")
 
-// Get reference to an existing index
 index, err := client.GetIndex("my_custom_index")
 if err != nil {
     log.Fatal(err)
 }
 
-// Now you can perform operations on the index
 fmt.Println(index.GetInfo())
 ```
 
-**Parameters:**
-
-- `name`: Name of the index to retrieve
-
-**Returns:** An `*Index` instance configured with server parameters
-
 ### Ingestion of Data
 
-The `index.Upsert()` method is used to add or update vectors (embeddings) in an existing index. Each vector is represented as a `VectorItem` containing a unique identifier, the vector data itself, optional metadata, and optional filter fields for future querying.
+The `index.Upsert()` method adds or updates vectors in an existing index. Each `VectorItem` contains a unique identifier, vector data, optional metadata, and optional filter fields.
 
 ```go
-client := endee.EndeeClient("your-token-here")
-
-// Accessing the index
 index, err := client.GetIndex("your-index-name")
 if err != nil {
     log.Fatal(err)
 }
 
-// Insert multiple vectors in a batch
 vectors := []endee.VectorItem{
     {
         ID:     "vec1",
@@ -289,37 +285,94 @@ if err != nil {
 
 **VectorItem Fields:**
 
-- `ID`: Unique identifier for the vector (required)
-- `Vector`: Slice of float32 representing the embedding (required)
+- `ID`: Unique identifier for the vector (required, must be non-empty)
+- `Vector`: Slice of float32 representing the embedding (required for dense/hybrid indexes; no NaN or Inf values)
+- `SparseIndices`: Sparse vector indices (required for hybrid indexes, must pair with `SparseValues`)
+- `SparseValues`: Sparse vector values (required for hybrid indexes, must pair with `SparseIndices`)
 - `Meta`: Map for storing additional information (optional)
 - `Filter`: Map with key-value pairs for structured filtering during queries (optional)
 
-> **Note:** Maximum batch size is 1000 vectors per upsert call.
+> **Note:** Maximum batch size is 1000 vectors per upsert call. Duplicate IDs within a single batch are rejected. For hybrid indexes, **all** items in the batch must include sparse data; for dense-only indexes, sparse data is not allowed.
+
+### Hybrid Search
+
+Hybrid indexes combine dense and sparse vectors using Reciprocal Rank Fusion (RRF) to blend semantic similarity with keyword-level precision.
+
+#### Creating a Hybrid Index
+
+```go
+err := client.CreateIndex(
+    "my_hybrid_index",
+    768,
+    "cosine",
+    16,
+    128,
+    endee.PrecisionFloat32,
+    nil,
+    endee.SparseModelDefault, // enable hybrid mode
+)
+```
+
+#### Upserting Hybrid Vectors
+
+Every item in a hybrid upsert must provide both dense and sparse components:
+
+```go
+vectors := []endee.VectorItem{
+    {
+        ID:            "doc1",
+        Vector:        []float32{/* dense embedding */},
+        SparseIndices: []int{5, 42, 100},
+        SparseValues:  []float32{0.8, 0.3, 0.6},
+        Meta:          map[string]interface{}{"title": "Example"},
+        Filter:        map[string]interface{}{"category": "news"},
+    },
+}
+
+err = index.Upsert(vectors)
+```
+
+#### Querying a Hybrid Index
+
+Pass sparse data alongside the dense vector. Use `denseRRFWeight` and `rrfRankConstant` to tune RRF blending:
+
+```go
+results, err := index.Query(
+    denseVector,   // dense query vector
+    []int{5, 42},  // sparseIndices
+    []float32{0.8, 0.3}, // sparseValues
+    10,            // top_k
+    nil,           // filter
+    128,           // ef
+    false,         // includeVectors
+    nil,           // filterParams
+    0.5,           // denseRRFWeight (0.0–1.0; 0.5 = equal weight)
+    60,            // rrfRankConstant (≥1; default: 60)
+)
+```
 
 ### Querying the Index
 
-The `index.Query()` method performs a similarity search in the index using a given query vector. It returns the closest vectors (based on the index's distance metric) along with optional metadata and vector data.
+The `index.Query()` method performs a similarity search using a query vector.
 
 ```go
-client := endee.EndeeClient("your-token-here")
-
-// Accessing the index
 index, err := client.GetIndex("your-index-name")
 if err != nil {
     log.Fatal(err)
 }
 
-// Query with custom parameters
 queryVector := []float32{/* your query vector */}
 results, err := index.Query(
     queryVector,  // query vector
-    nil,          // sparseIndices (optional, for hybrid search)
-    nil,          // sparseValues (optional, for hybrid search)
-    5,            // top_k - number of results (max 512)
+    nil,          // sparseIndices (for hybrid search)
+    nil,          // sparseValues (for hybrid search)
+    5,            // top_k - number of results (max 4096)
     nil,          // filter (optional)
     128,          // ef - runtime parameter (max 1024)
     true,         // include_vectors
-    nil,          // filterParams (optional, for advanced filtering)
+    nil,          // filterParams (optional)
+    0.5,          // denseRRFWeight (0.0–1.0, used for hybrid)
+    60,           // rrfRankConstant (≥1, used for hybrid)
 )
 if err != nil {
     log.Fatal(err)
@@ -334,15 +387,17 @@ for _, result := range results {
 **Query Parameters:**
 
 - `vector`: Query vector (must match index dimension)
-- `sparseIndices`: Sparse vector indices (optional, for hybrid search)
-- `sparseValues`: Sparse vector values (optional, for hybrid search)
-- `k`: Number of nearest neighbors to return (max 512, default: 10)
-- `filter`: Optional filter criteria (map[string]interface{})
-- `ef`: Runtime search parameter - higher values improve recall but increase latency (max 1024, default: 128)
+- `sparseIndices`: Sparse vector indices (for hybrid search; must pair with `sparseValues`)
+- `sparseValues`: Sparse vector values (for hybrid search; must pair with `sparseIndices`)
+- `k`: Number of nearest neighbors to return (1–4096, default: 10)
+- `filter`: Optional filter criteria (`map[string]interface{}`)
+- `ef`: Runtime search parameter — higher values improve recall but increase latency (0–1024, default: 128)
 - `includeVectors`: Whether to return the actual vector data in results (default: false)
-- `filterParams`: Advanced filter parameters (optional, *FilterParams):
-  - `BoostPercentage`: Expand candidate pool by X% during filtered search (0-100, default: 0)
-  - `PrefilterThreshold`: Switch to brute-force when matches < threshold (1000-1000000, default: 10000)
+- `filterParams`: Advanced filter parameters (optional, `*FilterParams`):
+  - `BoostPercentage`: Expand candidate pool by X% during filtered search (0–400, default: 0)
+  - `PrefilterThreshold`: Switch to brute-force when matches < threshold (0 disables; 1000–1000000, default: 10000)
+- `denseRRFWeight`: RRF weight for the dense component (0.0–1.0; default: 0.5; ignored for dense-only indexes)
+- `rrfRankConstant`: RRF rank constant (≥1; default: 60; ignored for dense-only indexes)
 
 **Result Fields:**
 
@@ -356,17 +411,9 @@ for _, result := range results {
 
 ## Filtered Querying
 
-The `index.Query()` method supports structured filtering using the `filter` parameter. This allows you to restrict search results based on metadata conditions, in addition to vector similarity.
-
-To apply multiple filter conditions, pass a map with filter objects, where each key defines a field and value defines the condition. **All filters are combined with logical AND** — meaning a vector must match all specified conditions to be included in the results.
+The `index.Query()` method supports structured filtering using the `filter` parameter. All filters are combined with **logical AND** — a vector must match every condition to be returned.
 
 ```go
-index, err := client.GetIndex("your-index-name")
-if err != nil {
-    log.Fatal(err)
-}
-
-// Query with multiple filter conditions (AND logic)
 filter := map[string]interface{}{
     "tags": map[string]interface{}{
         "$eq": "important",
@@ -376,15 +423,10 @@ filter := map[string]interface{}{
     },
 }
 
-results, err := index.Query(queryVector, nil, nil, 5, filter, 128, true, nil)
-if err != nil {
-    log.Fatal(err)
-}
+results, err := index.Query(queryVector, nil, nil, 5, filter, 128, true, nil, 0.5, 60)
 ```
 
 ### Filtering Operators
-
-The `filter` parameter in `index.Query()` supports a range of comparison operators to build structured queries. These operators allow you to include or exclude vectors based on metadata or custom fields.
 
 | Operator | Description | Supported Type | Example Usage |
 |----------|-------------|----------------|---------------|
@@ -394,9 +436,9 @@ The `filter` parameter in `index.Query()` supports a range of comparison operato
 
 **Important Notes:**
 
-- Operators are **case-sensitive** and must be prefixed with a `$`
-- Filters operate on fields provided under the `Filter` key during vector upsert
-- The `$range` operator supports values only within the range **[0 – 999]**. If your data exceeds this range (e.g., timestamps, large scores), you should normalize or scale your values to fit within [0, 999] prior to upserting or querying
+- Operators are **case-sensitive** and must be prefixed with `$`
+- Filters operate on fields set under `Filter` during vector upsert
+- The `$range` operator supports values only within **[0 – 999]**. Normalize or scale values to fit this range prior to upserting
 
 ### Filter Examples
 
@@ -438,86 +480,62 @@ filter = map[string]interface{}{
 
 ## Deletion Methods
 
-The system supports two types of deletion operations — **vector deletion** and **index deletion**. These allow you to remove specific vectors or entire indexes from your workspace, giving you full control over lifecycle and storage.
-
 ### Vector Deletion
 
-Vector deletion is used to remove specific vectors from an index using their unique `ID`. This is useful when:
-
-- A document is outdated or revoked
-- You want to update a vector by first deleting its old version
-- You're cleaning up test data or low-quality entries
-
 ```go
-client := endee.EndeeClient("your-token-here")
 index, err := client.GetIndex("your-index-name")
 if err != nil {
     log.Fatal(err)
 }
 
-// Delete a single vector by ID
-result, err := index.DeleteVector("vec1")
+// Delete by ID
+result, err := index.DeleteVectorByID("vec1")
 if err != nil {
     log.Fatal(err)
 }
 fmt.Println(result)
+
+// Delete by filter
+result, err = index.DeleteVectorByFilter(map[string]interface{}{
+    "category": map[string]interface{}{"$eq": "old"},
+})
 ```
 
 ### Index Deletion
 
-Index deletion permanently removes the entire index and all vectors associated with it. This should be used when:
-
-- The index is no longer needed
-- You want to re-create the index with a different configuration
-- You're managing index rotation in batch pipelines
-
 ```go
-client := endee.EndeeClient("your-token-here")
-
-// Delete an entire index
 err := client.DeleteIndex("your-index-name")
 if err != nil {
     log.Fatal(err)
 }
 ```
 
-> ⚠️ **Caution:** Deletion operations are **irreversible**. Ensure you have the correct `ID` or index name before performing deletion, especially at the index level.
+> **Caution:** Deletion operations are **irreversible**. Verify the correct ID or index name before proceeding.
 
 ## Additional Operations
 
 ### Get Vector by ID
 
-The `index.GetVector()` method retrieves a specific vector from the index by its unique identifier.
-
 ```go
-// Retrieve a specific vector by its ID
 vector, err := index.GetVector("vec1")
 if err != nil {
     log.Fatal(err)
 }
 
-// The returned VectorItem contains:
-// - ID: Vector identifier
-// - Meta: Metadata map
-// - Filter: Filter fields map
-// - Vector: Vector data array
+// VectorItem contains: ID, Meta, Filter, Vector, SparseIndices, SparseValues
 fmt.Printf("Vector: %+v\n", vector)
 ```
 
 ### Update Filters
 
-The `index.UpdateFilters()` method updates filter metadata for multiple vectors by ID without modifying the vector data itself or other metadata fields. This is useful when you need to change filtering criteria for existing vectors.
+The `index.UpdateFilters()` method updates filter metadata for multiple vectors without modifying vector data or other metadata. Useful when filter criteria need to change after ingestion.
 
 ```go
-client := endee.EndeeClient("your-token-here")
-
-// Accessing the index
 index, err := client.GetIndex("your-index-name")
 if err != nil {
     log.Fatal(err)
 }
 
-// Update filters for multiple vectors
 updates := []endee.FilterUpdateItem{
     {
         ID: "vec1",
@@ -544,28 +562,68 @@ fmt.Println(result) // "2 filters updated"
 **Parameters:**
 
 - `updates`: Slice of `FilterUpdateItem`, each containing:
-  - `ID`: Vector identifier (required, must not be empty)
-  - `Filter`: New filter metadata to set (map[string]interface{})
+  - `ID`: Vector identifier (required, must be non-empty)
+  - `Filter`: New filter metadata (replaces existing filter fields entirely)
 
-**Returns:** Success message with the number of filters updated
+**Notes:**
+- Only filter metadata is replaced; vector data and `Meta` remain unchanged
+- If a vector ID doesn't exist, the operation will fail for that update
 
-**Important Notes:**
+### Describe Index (Local)
 
-- Only the filter metadata is updated; vector data and other metadata remain unchanged
-- All specified filter fields for a vector are replaced with the new filter data
-- If a vector ID doesn't exist, the operation will fail for that specific update
+Returns a map of the index's configuration from local cache — no HTTP call required:
+
+```go
+info := index.Describe()
+// keys: name, space_type, dimension, sparse_model, is_hybrid, count, precision, M, ef_con
+fmt.Printf("%+v\n", info)
+```
+
+### Refresh Metadata
+
+Re-fetches index metadata from the server and updates all local fields:
+
+```go
+meta, err := index.RefreshMetadata()
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Updated count: %v\n", meta["count"])
+```
+
+### Rebuild Index
+
+Triggers an HNSW index rebuild with optional new `M` and `efCon` parameters. The index must be non-empty.
+
+```go
+newM := 32
+newEfCon := 256
+
+result, err := index.Rebuild(&newM, &newEfCon)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("%+v\n", result)
+
+// Check rebuild status
+status, err := index.RebuildStatus()
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("%+v\n", status)
+```
+
+Pass `nil` for either parameter to keep the current value.
 
 ### Get Index Info
 
 ```go
-// Get index statistics and configuration info
-info := index.GetInfo()
-fmt.Println(info)
+fmt.Println(index.GetInfo())
 ```
 
 ## Context Support
 
-All operations support Go's `context.Context` for cancellation and timeouts:
+All operations support `context.Context` for cancellation and timeouts:
 
 ```go
 import (
@@ -573,12 +631,10 @@ import (
     "time"
 )
 
-// Create context with timeout
 ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 defer cancel()
 
-// Use context with operations
-err := client.CreateIndexWithContext(ctx, "my_index", 768, "cosine", 16, 128, endee.PrecisionFloat32, nil, 0)
+err := client.CreateIndexWithContext(ctx, "my_index", 768, "cosine", 16, 128, endee.PrecisionFloat32, nil, "")
 
 indexes, err := client.ListIndexesWithContext(ctx)
 
@@ -586,7 +642,13 @@ index, err := client.GetIndexWithContext(ctx, "my_index")
 
 err = index.UpsertWithContext(ctx, vectors)
 
-results, err := index.QueryWithContext(ctx, queryVector, nil, nil, 10, nil, 128, false, nil)
+results, err := index.QueryWithContext(ctx, queryVector, nil, nil, 10, nil, 128, false, nil, 0.5, 60)
+
+result, err := index.UpdateFiltersWithContext(ctx, updates)
+
+meta, err := index.RefreshMetadataWithContext(ctx)
+
+result, err := index.RebuildWithContext(ctx, nil, nil)
 
 err = client.DeleteIndexWithContext(ctx, "my_index")
 ```
@@ -600,7 +662,7 @@ err = client.DeleteIndexWithContext(ctx, "my_index")
 | Method | Description |
 |--------|-------------|
 | `EndeeClient(token string) *Endee` | Initialize client with optional API token |
-| `CreateIndex(name, dimension, spaceType, M, efCon, precision, version, sparseDim) error` | Create a new vector index |
+| `CreateIndex(name, dimension, spaceType, M, efCon, precision, version, sparseModel) error` | Create a new vector index |
 | `ListIndexes() ([]IndexInfo, error)` | List all indexes in workspace |
 | `DeleteIndex(name string) error` | Delete a vector index |
 | `GetIndex(name string) (*Index, error)` | Get reference to a vector index |
@@ -610,11 +672,15 @@ err = client.DeleteIndexWithContext(ctx, "my_index")
 | Method | Description |
 |--------|-------------|
 | `Upsert(vectors []VectorItem) error` | Insert or update vectors (max 1000 per batch) |
-| `Query(vector, sparseIndices, sparseValues, k, filter, ef, includeVectors, filterParams) ([]QueryResult, error)` | Search for similar vectors |
-| `DeleteVectorById(id string) (string, error)` | Delete a vector by ID |
-| `DeleteVectorByFilter(filter map[string]interface{}) (string, error)` | Delete vectors matching a specific filter |
+| `Query(vector, sparseIndices, sparseValues, k, filter, ef, includeVectors, filterParams, denseRRFWeight, rrfRankConstant) ([]QueryResult, error)` | Search for similar vectors |
+| `DeleteVectorByID(id string) (string, error)` | Delete a vector by ID |
+| `DeleteVectorByFilter(filter map[string]interface{}) (string, error)` | Delete vectors matching a filter |
 | `GetVector(id string) (VectorItem, error)` | Get a specific vector by ID |
-| `UpdateFilters(updates []FilterUpdateItem) (string, error)` | Update filter metadata for multiple vectors by ID |
+| `UpdateFilters(updates []FilterUpdateItem) (string, error)` | Update filter metadata for multiple vectors |
+| `Describe() map[string]interface{}` | Return index configuration from local cache (no HTTP) |
+| `RefreshMetadata() (map[string]interface{}, error)` | Re-fetch index metadata from server |
+| `Rebuild(m, efCon *int) (map[string]interface{}, error)` | Rebuild HNSW index with optional new parameters |
+| `RebuildStatus() (map[string]interface{}, error)` | Get current rebuild operation status |
 | `GetInfo() string` | Get index statistics and configuration |
 | `String() string` | Get string representation of index |
 
@@ -623,10 +689,12 @@ err = client.DeleteIndexWithContext(ctx, "my_index")
 ```go
 // VectorItem represents a vector with metadata
 type VectorItem struct {
-    ID     string                 `json:"id"`
-    Vector []float32              `json:"vector"`
-    Meta   map[string]interface{} `json:"meta,omitempty"`
-    Filter map[string]interface{} `json:"filter,omitempty"`
+    ID            string                 `json:"id"`
+    Vector        []float32              `json:"vector"`
+    SparseIndices []int                  `json:"sparse_indices,omitempty"`
+    SparseValues  []float32              `json:"sparse_values,omitempty"`
+    Meta          map[string]interface{} `json:"meta,omitempty"`
+    Filter        map[string]interface{} `json:"filter,omitempty"`
 }
 
 // QueryResult represents a search result
@@ -645,11 +713,15 @@ type FilterUpdateItem struct {
     ID     string                 `json:"id"`
     Filter map[string]interface{} `json:"filter"`
 }
+
+// FilterParams controls advanced filtering behavior
+type FilterParams struct {
+    BoostPercentage    int // 0–400: expand candidate pool during filtered search
+    PrefilterThreshold int // 0 disables; 1000–1000000: switch to brute-force below this
+}
 ```
 
 ## Constants
-
-The package provides useful constants for configuration:
 
 ```go
 // Precision types
@@ -657,8 +729,8 @@ const (
     PrecisionBinary  = "binary"   // 1-bit binary quantization
     PrecisionFloat16 = "float16"  // 16-bit floating point
     PrecisionFloat32 = "float32"  // 32-bit floating point
-    PrecisionInt16   = "int16"   // 16-bit integer quantization
-    PrecisionInt8    = "int8"    // 8-bit integer quantization
+    PrecisionInt16   = "int16"    // 16-bit integer quantization (default)
+    PrecisionInt8    = "int8"     // 8-bit integer quantization
 )
 
 // Distance metrics
@@ -668,53 +740,79 @@ const (
     InnerProduct = "ip"      // Inner product
 )
 
+// Sparse models for hybrid indexes
+const (
+    SparseModelDefault    = "default"     // Default sparse model
+    SparseModelEndEeBM25  = "endee_bm25"  // BM25-based sparse model
+)
+
 // Limits
 const (
-    MaxDimensionAllowed    = 10000  // Maximum vector dimensionality
+    MaxDimensionAllowed    = 8000   // Maximum vector dimensionality
     MaxVectorsPerBatch     = 1000   // Maximum vectors per upsert
-    MaxTopKAllowed         = 512    // Maximum top-k results
+    MaxTopKAllowed         = 4096   // Maximum top-k results
     MaxEfSearchAllowed     = 1024   // Maximum ef parameter
     MaxIndexNameLenAllowed = 48     // Maximum index name length
 )
 
 // Defaults
 const (
-    DefaultM              = 16   // Default HNSW M parameter
-    DefaultEfConstruction = 128  // Default ef_construction
-    DefaultTopK           = 10   // Default top-k
-    DefaultEfSearch       = 128  // Default ef_search
+    DefaultM              = 16    // Default HNSW M parameter
+    DefaultEfConstruction = 128   // Default ef_construction
+    DefaultEfSearch       = 128   // Default ef_search
+    DefaultDenseRRFWeight = 0.5   // Default RRF weight for dense component
+    DefaultRRFRankConstant = 60   // Default RRF rank constant
 )
 ```
+
+## Error Handling
+
+The client returns typed errors that can be inspected for specific HTTP failure conditions:
+
+```go
+import "errors"
+
+err := client.CreateIndex("test", 768, "cosine", 16, 128, endee.PrecisionFloat32, nil, "")
+if err != nil {
+    var notFound *endee.NotFoundError
+    var conflict *endee.ConflictError
+    var authErr *endee.AuthenticationError
+
+    switch {
+    case errors.As(err, &conflict):
+        fmt.Println("Index already exists")
+    case errors.As(err, &notFound):
+        fmt.Println("Resource not found")
+    case errors.As(err, &authErr):
+        fmt.Println("Invalid or missing API token")
+    default:
+        log.Fatal("Unexpected error:", err)
+    }
+}
+```
+
+**Error Types:**
+
+| Type | HTTP Status | Description |
+|------|-------------|-------------|
+| `APIError` | 400 | Bad request / general API error |
+| `AuthenticationError` | 401 | Invalid or missing token |
+| `SubscriptionError` | 402 | Subscription limit reached |
+| `ForbiddenError` | 403 | Insufficient permissions |
+| `NotFoundError` | 404 | Index or vector not found |
+| `ConflictError` | 409 | Resource already exists |
+| `ServerError` | 5xx | Server-side error |
 
 ## Performance Features
 
 The Go client includes several performance optimizations:
 
 - **Connection Pooling**: Advanced HTTP connection pooling scaled to CPU cores
-- **Concurrent Processing**: Automatic concurrent processing for large batches
+- **Concurrent Processing**: Automatic concurrent processing for large batches (>10 vectors)
 - **Memory Pooling**: Reusable buffer pools to reduce GC pressure
 - **Streaming JSON**: Fast JSON encoding/decoding with streaming
 - **MessagePack**: Efficient binary serialization for vector data
 - **Context Support**: Full cancellation and timeout support
-
-## Error Handling
-
-```go
-// Handle common errors
-err := client.CreateIndex("test", 768, "cosine", 16, 128, endee.PrecisionFloat32, nil, 0)
-if err != nil {
-    switch {
-    case strings.Contains(err.Error(), "already exists"):
-        fmt.Println("Index already exists, continuing...")
-    case strings.Contains(err.Error(), "invalid index name"):
-        fmt.Println("Invalid index name format")
-    case strings.Contains(err.Error(), "dimension cannot be greater"):
-        fmt.Println("Dimension too large")
-    default:
-        log.Fatal("Unexpected error:", err)
-    }
-}
-```
 
 ## Requirements
 
