@@ -124,7 +124,7 @@ Not using a token at any development stage will result in open APIs and vectors.
 The Endee client acts as the main interface for all vector operations — such as creating indexes, upserting vectors, and running similarity queries. You can initialize the client in just a few lines:
 
 ```go
-import "github.com/EndeeLabs/endee-go-client"
+import "github.com/endee-io/endee-go-client"
 
 // Initialize with your API token
 client := endee.EndeeClient("your-token-here")
